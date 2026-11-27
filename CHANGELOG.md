@@ -8,6 +8,11 @@ What changed for people who use the dashboard, newest first. The commit history 
   (uncommitted changes included), so the work can be read before any merge request exists. The merge requests /
   pull requests of the session (GitHub through `gh`, GitLab through `glab`) show there with their state, CI and a
   link to the forge; a click on a file opens the diff of the whole branch or merge request in the editor. Read only.
+- Review tab, **reading guide**: "Prepare the guide" asks the session to explain what it produced: what was asked,
+  what was done, what it changed on top, what it did not do, its doubts, then the changes grouped by topic in reading
+  order, each with what to check. From a step, the editor follows that path (step recalled above the diff, lines
+  marked, "Step read, continue"); files the guide forgot are listed apart. The guide is marked outdated when the
+  diff changes.
 - Projects in WSL (opened as `\\wsl.localhost\<distro>\…`): their sessions now show under their project instead of
   "Terminal sessions", whatever the case of the path. Git runs there with the distribution's own git: the worktrees
   created from the terminal in WSL show with usable paths (opening a branch that has one no longer fails with

@@ -1,6 +1,7 @@
 // driver texts (fr).
 export default {
   feed: {
+    reviewGuideAsked: '✨ guide de relecture demandé à Claude (onglet Relecture)',
     schemaNotRendered: '⚠ schéma « {key} » du panneau non rendu, renvoyé à Claude pour correction',
     runningInBackground: 'Cette conversation tourne déjà dans un autre Claude Code, en arrière-plan ({id}).',
     sessionStopped: 'La session Claude s\'est arrêtée : ton prochain message la relance.',

@@ -23,6 +23,8 @@ import { progressView, markAchievementsSeen, announcementsSince } from './progre
 import { originOf, onDevMessage, onOrigin, onCreate, onInterrupt, onWorktree, onSeen } from './achievement-counters.mjs';
 import { headCommit } from '../server/updates.mjs';
 import * as push from './push.mjs';
+import { reviewRequest } from '../public/core/review-guide.js';
+import { parseMrUrl } from '../public/core/mr-url.js';
 import { subscriptionUsage, availableModels } from '../driver.mjs';
 const ENGINE_COMMIT = headCommit(); // read at startup: the code this engine runs
 
@@ -259,6 +261,19 @@ async function schemaError(req, res, { params: { slug } }) {
   s.data.reportedSchemas = { ...s.data.reportedSchemas, [key]: fingerprint };
   updateBoard(slug, {});
   return sendJson(res, 200, { reported: true });
+}
+
+// Reading guide of the Review tab asked by the developer: { target, baseName, headName, mergeBase, head, fingerprint,
+// files } as the page shows the diff; a paused session is resumed, Claude answers with set_review_guide
+async function reviewGuide(req, res, { params: { slug } }) {
+  const data = sessions.get(slug)?.data;
+  if (!drivers.has(slug) && !resumable(data)) return sendJson(res, 409, err('cannotResume'));
+  let body;
+  try { body = JSON.parse(await readBody(req)); } catch { return sendJson(res, 400, err('invalidJson')); }
+  const request = reviewRequest(body, target => parseMrUrl(target)?.url === target);
+  if (!request) return sendJson(res, 400, err('invalidJson'));
+  const s = await resume(slug);
+  return sendJson(res, 200, { asked: s.requestReviewGuide(request) });
 }
 
 // Rename: { title } pins the name (Claude no longer changes it); an empty title restores the automatic name
@@ -528,6 +543,7 @@ export default {
   'POST /api/sessions/:slug/push-queue': valid(pushQueue),
   'POST /api/sessions/:slug/rename': valid(rename),
   'POST /api/sessions/:slug/schema-error': valid(schemaError),
+  'POST /api/sessions/:slug/review-guide': valid(reviewGuide),
   'POST /api/sessions/:slug/release': valid(release),
   'POST /api/sessions/:slug/end': valid(end),
   'POST /api/sessions/:slug/reload': valid(reload),

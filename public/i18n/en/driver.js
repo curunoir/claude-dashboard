@@ -1,6 +1,7 @@
 // driver texts (en).
 export default {
   feed: {
+    reviewGuideAsked: '✨ reading guide asked to Claude (Review tab)',
     schemaNotRendered: '⚠ panel diagram "{key}" could not be rendered, sent back to Claude to fix',
     runningInBackground: 'This conversation is already running in another Claude Code, in the background ({id}).',
     sessionStopped: 'The Claude session stopped: your next message restarts it.',

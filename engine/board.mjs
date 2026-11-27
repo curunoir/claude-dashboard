@@ -51,7 +51,8 @@ export function markSeen(slug, id) {
 
 /**
  * Merges fields into the state of a session (null clears), writes it to disk and notifies the page. Merge requests
- * (`mrs`, Review tab) add up: those Claude declares and those the driver saw being created.
+ * (`mrs`, Review tab) add up: those Claude declares and those the driver saw being created; reading guides (`reviews`)
+ * merge per target.
  */
 export function updateBoard(slug, fields) {
   const s = sessions.get(slug);
@@ -61,7 +62,8 @@ export function updateBoard(slug, fields) {
     // Renamed by hand: the title no longer moves, the one Claude proposes is kept for a return to the automatic name
     if (k === 'title' && s.data.titlePinned) { s.data.autoTitle = v; continue; }
     if (v === null) delete s.data[k];
-    else s.data[k] = k === 'mrs' ? cleanMrUrls([...(s.data.mrs || []), ...(Array.isArray(v) ? v : [])]) : v;
+    else s.data[k] = k === 'mrs' ? cleanMrUrls([...(s.data.mrs || []), ...(Array.isArray(v) ? v : [])])
+      : k === 'reviews' ? { ...s.data.reviews, ...v } : v;
   }
   s.data.updatedAt = new Date().toISOString();
   writeSession(slug);

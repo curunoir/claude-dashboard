@@ -96,3 +96,53 @@ test('createsMr: the commands whose output gives a merge request URL', () => {
   assert.ok(!createsMr('gh pr view 3'));
   assert.ok(!createsMr('mygh pr create'));
 });
+
+test('lineRanges: ranges of a file of the guide', async () => {
+  const { lineRanges } = await import('../public/core/review-guide.js');
+  assert.deepEqual(lineRanges('40-95'), [[40, 95]]);
+  assert.deepEqual(lineRanges('L12, 40 - 95,x, 9-3, 0'), [[12, 12], [40, 95]]);
+  assert.deepEqual(lineRanges(undefined), []);
+});
+
+test('cleanGuide: checked, trimmed, refused with a reason', async () => {
+  const { cleanGuide } = await import('../public/core/review-guide.js');
+  const step = { title: 'Core', attention: 'high', why: 'w', check: 'c', files: [{ path: 'server\\git.mjs', lines: '40-95, 3', note: 'gitRange()' }, 'tests/a.test.mjs'] };
+  const { guide } = cleanGuide({ summary: ' S ', scope: { asked: 'a', done: 'd', extra: ['x', '', 3], notDone: 'no' }, doubts: ['d1'], steps: [step], other: 1 });
+  assert.deepEqual(guide, {
+    summary: 'S', scope: { asked: 'a', done: 'd', extra: ['x'], notDone: [] }, doubts: ['d1'],
+    steps: [{ title: 'Core', attention: 'high', why: 'w', check: 'c', files: [{ path: 'server/git.mjs', lines: '40-95, 3', note: 'gitRange()' }, { path: 'tests/a.test.mjs' }] }],
+  });
+  const bad = (g, part) => assert.match(cleanGuide(g).error, part);
+  bad(null, /object/);
+  bad({ steps: [step] }, /summary/);
+  bad({ summary: 's', steps: [] }, /steps/);
+  bad({ summary: 's', steps: [{ ...step, attention: 'huge' }] }, /attention/);
+  bad({ summary: 's', steps: [{ ...step, files: [] }] }, /files/);
+  for (const path of ['../x', '/etc/passwd', 'C:\\x\\y', 'a//b', ''])
+    bad({ summary: 's', steps: [{ ...step, files: [{ path }] }] }, /not a path relative/);
+});
+
+test('readingPath: steps in order, files outside the path, files gone from the diff', async () => {
+  const { readingPath } = await import('../public/core/review-guide.js');
+  const files = ['a.js', 'b.js', 'c.js', 'd.js'].map(rel => ({ rel, path: `/r/${rel}`, state: 'modified' }));
+  const guide = { steps: [
+    { title: '1', attention: 'high', files: [{ path: 'b.js', lines: '3-9' }, { path: 'gone.js' }] },
+    { title: '2', attention: 'low', files: [{ path: 'a.js' }, { path: 'b.js', lines: '40' }] },
+  ] };
+  const p = readingPath(files, guide);
+  assert.deepEqual(p.entries.map(e => [e.file.rel, e.step, e.file.lines]), [['b.js', 0, '3-9'], ['a.js', 1, undefined], ['b.js', 1, '40'], ['c.js', -1, undefined], ['d.js', -1, undefined]]);
+  assert.deepEqual(p.steps[0].files.map(f => [f.rel, f.missing, f.entry]), [['b.js', undefined, 0], ['gone.js', true, undefined]]);
+  assert.deepEqual(p.out.map(f => [f.rel, f.entry]), [['c.js', 3], ['d.js', 4]]);
+  assert.deepEqual(readingPath(files, null).out.length, 4);
+});
+
+test('reviewRequest: only a checked diff goes into the message to Claude', async () => {
+  const { reviewRequest } = await import('../public/core/review-guide.js');
+  const ok = { target: 'branch', baseName: 'origin/main', headName: 'x\n`rm`', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }, { rel: '../b', state: 'x' }] };
+  assert.deepEqual(reviewRequest(ok), { target: 'branch', baseName: 'origin/main', headName: 'x rm', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }] });
+  assert.equal(reviewRequest({ ...ok, mergeBase: 'origin/main' }), null);
+  assert.equal(reviewRequest({ ...ok, head: '--output=x' }), null);
+  assert.equal(reviewRequest({ ...ok, files: [] }), null);
+  assert.equal(reviewRequest({ ...ok, target: 'https://github.com/a/b/pull/3' }), null);
+  assert.equal(reviewRequest({ ...ok, target: 'https://github.com/a/b/pull/3' }, u => u === 'https://github.com/a/b/pull/3').target, 'https://github.com/a/b/pull/3');
+});

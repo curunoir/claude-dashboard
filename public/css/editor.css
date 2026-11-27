@@ -64,3 +64,26 @@
   .vis-frame.vis-frame { grid-template: "body" minmax(0, 1fr) / minmax(0, 1fr); }
   .vis-tree, .vis-list, .vis-frame .vis-tabs { display: none !important; }
 }
+
+/* Review with a guide (review-nav.js): reading path on the left, step above the diff, navigation under it */
+.vis-frame.with-guide .vis-body { display: flex; flex-direction: column; }
+.vis-host { flex: 1; min-height: 0; }
+.rv-nav-step { border-left: 3px solid var(--line); border-radius: 8px; padding: 4px 4px 4px 6px; margin: 2px 2px 4px; }
+.rv-nav-step.high { border-left-color: var(--red); } .rv-nav-step.medium { border-left-color: var(--accent); }
+.rv-nav-step.out { border-left-color: transparent; color: var(--muted); }
+.rv-nav-step.cur { background: color-mix(in srgb, var(--link) 9%, transparent); }
+.rv-nav-step.done > .rv-nav-title { opacity: .55; }
+.rv-nav-title { display: flex; gap: 6px; align-items: baseline; padding: 1px 2px; }
+.rv-nav-title .t { flex: 1; font-weight: 600; }
+.rv-nav-title .ok { color: var(--green); }
+.rv-nav-file { padding-left: 14px; }
+.rv-nav-file .name { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.rv-banner { flex-shrink: 0; margin: 8px 12px 6px; border: 1px solid var(--line-light); border-left: 4px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.rv-banner.high { border-left-color: var(--red); } .rv-banner.medium { border-left-color: var(--accent); }
+.rv-banner .top { display: flex; gap: 8px; align-items: center; margin-bottom: 2px; }
+.rv-banner .top b { flex: 1; }
+.rv-banner p { margin: 2px 0; }
+.rv-foot { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line-light); font-size: 12.5px; }
+.rv-foot .btn[disabled] { opacity: .5; cursor: default; }
+.rv-line-mark { background: var(--red); width: 3px !important; margin-left: 3px; }
+@media (max-width: 900px) { .rv-foot .m { display: none; } }

@@ -6,6 +6,8 @@ import { z } from 'zod';
 import * as trackers from '../trackers.mjs';
 import { createWorktree } from '../projects.mjs';
 import { boardFields } from '../engine/board-fields.mjs';
+import { cleanGuide, ATTENTIONS } from '../public/core/review-guide.js';
+import { parseMrUrl } from '../public/core/mr-url.js';
 import { migrateSession } from '../migration.mjs';
 import { t } from '../public/i18n/index.js';
 import { childMode } from './modes.mjs';
@@ -17,7 +19,7 @@ export const BOARD_TOOL = 'mcp__dashboard__update_board';
  * permission card, or the auto mode classifier) like any tool, so a session cannot get around its mode through another
  * session.
  */
-export const DASHBOARD_TOOLS = [BOARD_TOOL, 'mcp__dashboard__list_sessions', 'mcp__dashboard__list_trackers'];
+export const DASHBOARD_TOOLS = [BOARD_TOOL, 'mcp__dashboard__list_sessions', 'mcp__dashboard__list_trackers', 'mcp__dashboard__set_review_guide'];
 
 /** "dashboard" MCP server of the session: returns `{ dashboard }`, passed to the query (mcpServers). */
 export function attachMcpTools(ctx) {
@@ -139,8 +141,86 @@ export function attachMcpTools(ctx) {
           return { content: [{ type: 'text', text: `Profile rejected: ${e.message}` }], isError: true };
         }
       }),
+
+    // Reading guide of the Review tab: written by the session when the developer asks for it (s.requestReviewGuide)
+    tool('set_review_guide',
+      'Sets the reading guide of the Review tab for a target (the branch of the session, or one of its merge requests): '
+      + 'what was asked, what was done, your doubts, then the changes grouped by topic in reading order. It helps the '
+      + 'developer understand and judge what the session produced before the usual code review. Call it when the '
+      + 'dashboard asks for it; the request gives the target, the diff and the rules.',
+      {
+        target: z.string().describe('"branch", or the URL of the merge request, as given in the request'),
+        guide: z.object({
+          summary: z.string().describe('One or two sentences: what this diff does'),
+          scope: z.object({
+            asked: z.string().describe('What the developer asked for'),
+            done: z.string().describe('What was done'),
+            extra: z.array(z.string()).optional().describe('What was changed without being asked (renames, refactors, fixes on the way)'),
+            notDone: z.array(z.string()).optional().describe('What was asked or could be expected and is not done'),
+          }),
+          doubts: z.array(z.string()).optional().describe('What you are not sure of, did not test, or assumed'),
+          steps: z.array(z.object({
+            title: z.string(),
+            attention: z.enum(ATTENTIONS).describe('high: to read closely (logic, risk); medium: to skim; low: incidental (tests, renames, docs, generated)'),
+            why: z.string().describe('What this group of changes does and why'),
+            check: z.string().optional().describe('What the developer should verify here'),
+            files: z.array(z.object({
+              path: z.string().describe('Path relative to the repository, as in the diff'),
+              lines: z.string().optional().describe('Lines concerned in the new version of the file, e.g. "40-95" or "12-30, 80-95"'),
+              note: z.string().optional().describe('A few words: the function or the point to look at'),
+            })),
+          })).describe('Reading path: the order that makes the change understandable, the core first'),
+        }),
+      },
+      async ({ target, guide: input }) => {
+        const id = target === 'branch' ? 'branch' : parseMrUrl(target)?.url;
+        if (!id) return { content: [{ type: 'text', text: 'Guide rejected: target must be "branch" or a merge request URL' }], isError: true };
+        const { guide, error } = cleanGuide(input);
+        if (error) return { content: [{ type: 'text', text: `Guide rejected: ${error}` }], isError: true };
+        // The fingerprint of the diff the developer was looking at when asking: the page marks the guide outdated once the diff differs
+        const asked = s.reviewRequest?.target === id ? s.reviewRequest : null;
+        updateBoard({ reviews: { [id]: { ...guide, fingerprint: asked?.fingerprint || '', createdAt: new Date().toISOString() } } });
+        s.reviewRequest = null;
+        return { content: [{ type: 'text', text: 'Guide shown in the Review tab. Tell the developer in one sentence that it is ready, without repeating it in the conversation.' }] };
+      }),
     ],
   });
+  /**
+   * The developer asks for the reading guide of a target (button of the Review tab): the request goes to Claude with
+   * the diff as the page shows it, a line marks it in the feed.
+   */
+  s.requestReviewGuide = r => {
+    if (s.closed) return false;
+    s.reviewRequest = { target: r.target, fingerprint: r.fingerprint };
+    pushEvent({ id: newId(), t: 'auto', text: t('driver.feed.reviewGuideAsked') });
+    const what = r.target === 'branch' ? `the branch ${r.headName || 'of this session'}` : `the merge request ${r.target}`;
+    const diff = r.head ? `git diff ${r.mergeBase} ${r.head}` : `git diff ${r.mergeBase} (working tree, uncommitted changes included, plus the untracked files listed below)`;
+    ctx.dispatch([
+      `[Dashboard] The developer asks for the reading guide of ${what} (Review tab of the dashboard). They drive this `
+        + 'session and want to understand and judge what it produced (quality, scope, relevance) before the usual code review.',
+      '',
+      `Diff to describe: ${r.baseName} → ${r.headName || 'HEAD'}. Read it with: ${diff}`,
+      `Files of the diff (${r.files.length}):`,
+      ...r.files.map(f => `- ${f.state} ${f.rel} +${f.insertions} -${f.deletions}`),
+      '',
+      `Read the diff, then call set_review_guide with target "${r.target}". Rules:`,
+      '- Write it in the language you use with the developer, in plain sentences.',
+      '- summary: one or two sentences.',
+      '- scope: asked (what the developer asked, from this conversation; for changes that are not yours, from the commit '
+        + 'messages or the merge request), done, extra (everything changed without being asked: renames, refactors, fixes '
+        + 'on the way), notDone.',
+      '- doubts: what you are not sure of, did not test, assumed, or would look at again. Be honest: it is the first '
+        + 'thing the developer reads. Leave it empty only when there is truly none.',
+      '- steps: 2 to 8, in the order that makes the change understandable (the core first, what depends on it after). '
+        + 'Each file of the diff goes in one step; tests, renames, documentation and generated files are grouped in a last '
+        + 'step with attention "low". attention "high" only where a mistake would matter (logic, security, data).',
+      '- why says what the group does and why; check says what the developer should verify; lines are those of the new '
+        + 'version of the file.',
+      'Then tell the developer in one sentence that the guide is ready; do not repeat it in the conversation, and resume '
+        + 'where you were.',
+    ].join('\n'));
+    return true;
+  };
   /** Mermaid diagram of the panel that the page could not draw: Claude fixes it without waiting for the developer. */
   s.reportSchema = (key, error) => {
     if (s.closed) return false;

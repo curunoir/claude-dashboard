@@ -114,3 +114,39 @@
 .rv-meta a { margin-left: auto; text-decoration: none; white-space: nowrap; }
 .rv-section { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
 .rv-section .m { text-transform: none; letter-spacing: 0; }
+
+/* Review tab: the reading guide */
+.rv-section { display: flex; align-items: center; gap: 8px; }
+.rv-section .sp, .rv-stale .sp, .rv-foot .sp { flex: 1; }
+.rv-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; margin: 8px 0 14px; }
+.rv-empty p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+#review .btn.primary, .rv-foot .btn.primary { background: var(--link); border-color: var(--link); color: #fff; font-weight: 600; }
+#review .btn[disabled] { opacity: .6; cursor: default; }
+.rv-stale { display: flex; align-items: center; gap: 8px; background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 8px; padding: 5px 10px; font-size: 12px; margin-bottom: 10px; }
+.rv-redo { font: inherit; background: none; border: 1px solid transparent; border-radius: 5px; color: var(--muted); cursor: pointer; padding: 0 5px; }
+.rv-redo:hover { border-color: var(--line); color: var(--text); }
+.rv-summary { font-size: 13px; margin: 0 0 8px; }
+.rv-scope { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12.5px; border: 1px solid var(--line-light); border-radius: 8px; padding: 8px 10px; margin: 0; }
+.rv-scope dt { color: var(--muted); }
+.rv-scope dd { margin: 0; overflow-wrap: anywhere; }
+.rv-scope .extra { color: var(--orange); }
+.rv-doubts { margin: 6px 0 0; padding: 6px 10px 6px 26px; font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent); background: color-mix(in srgb, var(--orange) 7%, transparent); border-radius: 8px; }
+.rv-doubts li { margin: 2px 0; }
+.rv-progress { height: 4px; width: 90px; border-radius: 2px; background: var(--line-light); overflow: hidden; }
+.rv-progress i { display: block; height: 100%; background: var(--green); }
+.rv-step { border: 1px solid var(--line-light); border-left: 4px solid var(--line); border-radius: 10px; margin: 6px 0; overflow: hidden; }
+.rv-step.high { border-left-color: var(--red); } .rv-step.medium { border-left-color: var(--accent); }
+.rv-step.done > .rv-step-head { opacity: .6; }
+.rv-step-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+.rv-step-head .n, .rv-nav-title .n { font: 700 11px ui-monospace, monospace; color: var(--muted); }
+.rv-step-head .t { flex: 1; font-weight: 600; font-size: 13px; }
+.rv-att { font-size: 10.5px; border-radius: 8px; padding: 0 7px; white-space: nowrap; background: var(--chip); color: var(--muted); }
+.rv-att.high { background: var(--red-bg); color: var(--red); } .rv-att.medium { background: var(--yellow-pill); color: var(--yellow-txt); }
+.rv-check { width: 20px; height: 20px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--green); font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+.rv-check:hover { border-color: var(--green); }
+.rv-step-body { padding: 0 10px 8px; }
+.rv-why { font-size: 12.5px; margin: 0 0 6px; }
+.rv-look { font-size: 12.5px; margin: 0 0 6px; color: var(--red); }
+.rv-lines { color: var(--link); font: 11px ui-monospace, monospace; flex-shrink: 0; }
+.rv-file.gone { display: flex; gap: 8px; padding: 4px 6px; font-size: 12.5px; color: var(--muted); text-decoration: line-through; }
+.rv-file.gone .letter { width: 16px; text-align: center; }

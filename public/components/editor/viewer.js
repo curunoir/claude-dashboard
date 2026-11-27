@@ -9,6 +9,7 @@ import { isDarkTheme } from '../../services/theme.js';
 import { filesHtml } from '../git-files.js';
 import { loadMonaco, languageOf } from './monaco.js';
 import { remarksOn } from './remark.js';
+import { navHtml, bannerHtml, footHtml, afterStep, markLines } from './review-nav.js';
 import { t } from '../../i18n/index.js';
 
 /**
@@ -17,6 +18,8 @@ import { t } from '../../i18n/index.js';
  * `options.files`: the git files of that list (modified, or those of commit `options.commit`), shown in a
  * panel next to the folder tree. `options.range` `{ base, head, baseName, headName }`: the diff of a review instead
  * (from commit `base` to commit `head`, or to the file on disk without `head`), `options.files` being its files.
+ * `options.guide` (with `range`): the reading guide of the review; `list` is then its reading path, shown in place
+ * of the file list (review-nav.js).
  */
 export async function openViewer(path, list = null, index = 0, options = {}) {
   document.querySelector('.viewer')?.remove();
@@ -36,6 +39,7 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
     </div>`;
   document.body.append(v);
   let editor = null, sideBySide = true, currentPath = path, i = index;
+  const guide = options.guide || null;
   const frame = v.querySelector('.vis-frame');
   attachHandles(frame);
 
@@ -46,7 +50,12 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
     frame.classList.toggle('with-tree', !treeVis.hidden);
     frame.classList.toggle('with-list', !listVis.hidden);
   };
-  if (options.files?.length) {
+  if (guide) {
+    // Reading path of a review: repainted at each file (current step, steps read)
+    listVis.hidden = false;
+    frame.classList.add('with-guide');
+    v.querySelector('[data-vis-tab="list"]').textContent = t('side.review.guide.path');
+  } else if (options.files?.length) {
     const n = options.files.length;
     listVis.innerHTML = `<div class="m vis-list-head">${options.range ? t('side.review.viewerFiles') : options.commit ? t('editor.viewer.commitFiles') : t('editor.viewer.modifiedFiles')} · ${n}</div>`
       + `<div class="vis-scroll">${filesHtml(options.files, 'data-vis-list')}</div>`;
@@ -145,10 +154,12 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
     v.querySelector('.vis-name').textContent = c;
     paintTree(c, true);
     if (list) {
-      // Opened from the tree: move to this file if it is in the list
-      const k = list.findIndex(x => absKey(x) === absKey(c));
+      // Opened from the tree: move to this file if it is in the list (a reading path may hold a file twice: stay on
+      // the entry asked for)
+      const k = absKey(list[i] || '') === absKey(c) ? i : list.findIndex(x => absKey(x) === absKey(c));
       if (k >= 0) i = k;
       v.querySelector('.vis-pos').textContent = `${i + 1} / ${list.length}`;
+      if (guide) listVis.innerHTML = navHtml(guide, i);
       listVis.querySelectorAll('[data-vis-list]').forEach(b => b.classList.toggle('sel', k >= 0 && +b.dataset.i === k));
       listVis.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
     }
@@ -169,20 +180,23 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
     const diff = d.modified && d.tracked;
     v.querySelector('[data-vis="mode"]').hidden = !diff;
     if (d.binary) { body.innerHTML = `<p class="m">${t('editor.viewer.binaryBody')}</p>`; return; }
-    body.innerHTML = '';
+    // With a guide: the step recalled above the editor, the path navigation under it
+    body.innerHTML = guide ? `${bannerHtml(guide, i)}<div class="vis-host"></div>${footHtml(guide, i)}` : '';
+    const host = body.querySelector('.vis-host') || body;
     const dark = isDarkTheme();
     const common = { readOnly: true, automaticLayout: true, theme: dark ? 'vs-dark' : 'vs', minimap: { enabled: false }, scrollBeyondLastLine: false, fontSize: 12.5 };
     const lang = languageOf(c);
     if (diff) {
       // Unchanged parts are folded: we land on the changes (a click unfolds them)
-      editor = monaco.editor.createDiffEditor(body, { ...common, renderSideBySide: sideBySide, originalEditable: false, hideUnchangedRegions: { enabled: true, contextLineCount: 3 } });
+      editor = monaco.editor.createDiffEditor(host, { ...common, renderSideBySide: sideBySide, originalEditable: false, hideUnchangedRegions: { enabled: true, contextLineCount: 3 } });
       editor.setModel({ original: monaco.editor.createModel(d.original, lang), modified: monaco.editor.createModel(d.current, lang) });
       remarksOn(v, editor.getOriginalEditor(), c, lang, range ? t('side.review.versionBase', { base: range.baseName }) : options.commit ? t('editor.viewer.version.beforeCommit', { hash: options.commit.slice(0, 10) }) : t('editor.viewer.version.lastCommit'));
       remarksOn(v, editor.getModifiedEditor(), c, lang, range ? headVersion(range) : options.commit ? t('editor.viewer.version.leftByCommit', { hash: options.commit.slice(0, 10) }) : null);
     } else {
-      editor = monaco.editor.create(body, { ...common, value: d.current, language: lang });
+      editor = monaco.editor.create(host, { ...common, value: d.current, language: lang });
       remarksOn(v, editor, c, lang, range ? headVersion(range) : options.commit ? t('editor.viewer.version.commit', { hash: options.commit.slice(0, 10) }) : null);
     }
+    if (guide) markLines(monaco, editor, guide, i);
     // Opened from a search result: the found line centred, highlighted (without selecting it, which
     // would open the remark bubble)
     if (options.line) {
@@ -201,6 +215,12 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
     if (act === 'close') close();
     else if (act === 'prev') go(-1);
     else if (act === 'next') go(1);
+    else if (act === 'step-read' && guide) {
+      // Ticked read: on to the next step; unticked: the same file, repainted
+      const read = guide.toggleRead(guide.path.entries[i].step);
+      if (read) i = afterStep(guide, i);
+      show(list[i]);
+    }
     else if (act === 'mode' && editor?.updateOptions) {
       sideBySide = !sideBySide; editor.updateOptions({ renderSideBySide: sideBySide });
       e.target.textContent = sideBySide ? t('editor.viewer.inline') : t('editor.viewer.sideBySide');

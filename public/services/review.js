@@ -12,3 +12,10 @@ export const readTargets = (dir, mrs = []) => api(`/api/review/targets?dir=${enc
  * fingerprint, files }`, or `{ noBase }`, `{ foreign }` (merge request of another repository), `{ error }`.
  */
 export const readRange = (dir, target) => api(`/api/review/range?dir=${encodeURIComponent(dir)}&target=${encodeURIComponent(target)}`);
+
+/**
+ * Asks the session for the reading guide of a target: `request` is the diff as displayed (`{ target, baseName, headName,
+ * mergeBase, head, fingerprint, files }`). Claude answers through set_review_guide; the guide arrives in the session
+ * detail (`reviews[target]`).
+ */
+export const requestGuide = (slug, request) => api(`/api/sessions/${slug}/review-guide`, request);

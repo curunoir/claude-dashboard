@@ -85,12 +85,14 @@ editor's existing 💬 bubble.
 - **Tool** `set_review_guide({ target, guide })` of the `dashboard` MCP server (zod schema, relative paths, steps
   with `attention` high / medium / low): stored in the session JSON under `reviews[target]` (engine key) with the
   fingerprint and the date. An invalid guide is refused with the reason, Claude fixes it by itself.
-- **Request**: `POST /api/sessions/:slug/review-guide { target, base, head, fingerprint, files }` dispatches a
+- **Request**: `POST /api/sessions/:slug/review-guide { target, baseName, headName, mergeBase, head, fingerprint,
+  files }` (checked by `reviewRequest()`) dispatches a
   `[Dashboard]` message to the session (a ✨ line in the feed): target, base, the files of the diff, the format. The
   format lives in the tool description and in this message, not in the standing instructions.
 - **Page**: guide blocks in the tab, `components/editor/review-nav.js` (reading path on the left of the editor, step
   banner, marked lines, navigation), read steps in `localStorage` (`dash-review-read-<slug>`, reset when the guide is
-  redone), `outOfPath(files, guide)` (pure, tested).
+  redone), `readingPath(files, guide)` of `public/core/review-guide.js` (pure, tested: steps, files outside the
+  path, reading order).
 
 ## Non-goals
 

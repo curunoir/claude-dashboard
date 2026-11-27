@@ -162,7 +162,20 @@ and the design of what is about to be built in visual form, with all the availab
   another repository only has its state and link. Routes `GET /api/review/targets`, `GET /api/review/range` (the
   server chooses the refs, the page never sends a ref name), `/api/git/diff?base=&head=&from=`. URL parsing shared by
   page, server and engine: `public/core/mr-url.js`. Read every 10 s while displayed, repainted only when the answer
-  changed. The reading guide written by Claude is the second delivery of the spec.
+  changed.
+  **Reading guide**: on request ("Prepare the guide", `POST /api/sessions/:slug/review-guide` with the diff as
+  displayed, checked by `reviewRequest()`; a paused session is resumed), the session receives a `[Dashboard]` message
+  (`s.requestReviewGuide` of `driver/mcp-tools.mjs`, a ✨ line in the feed) and answers with the MCP tool
+  `set_review_guide({ target, guide })` (in `allowedTools`): summary, scope (asked / done / extra / not done), doubts,
+  and steps in reading order with an attention level (high / medium / low), why, what to check and their files with
+  lines. `cleanGuide()` of `public/core/review-guide.js` checks it (refused with the reason, Claude fixes it); it is
+  kept in the session JSON under `reviews[target]` (engine key, merged per target) with the fingerprint of the diff:
+  the tab marks it outdated once the diff differs. The format lives in the tool and in the request, not in the
+  standing instructions. The tab shows "In short", the doubts and the reading path (steps folded once ticked read:
+  `dash-review-read-<slug>` in `localStorage`, reset when the guide is written again), then "Outside the path": the
+  files of the diff the guide did not place (`readingPath()`, computed by the page). From a step, the editor follows
+  the path (`openViewer` option `guide`, `components/editor/review-nav.js`): steps on the left in place of the file
+  list, the step recalled above the diff, its lines marked in the margin, "Step read, continue" under it.
   A fourth tab, **Processes** (PC only, spec `docs/specs/2026-11-17-processes-tab.md`), lists what runs on the PC
   for development, in collapsible sections (`dash-processes-collapsed`): sessions of the displayed session's project,
   sessions of other projects, editors and terminals (VS Code, JetBrains, Orca, Windows Terminal, grouped by instance),

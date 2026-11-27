@@ -20,16 +20,18 @@ const [
   { remoteGate, startRemote }, access,
   { default: sessionRoutes }, { default: gitRoutes }, { default: explorerRoutes }, { default: fileRoutes },
   { default: projectRoutes }, { default: accessRoutes }, { default: optionRoutes }, { default: desktopRoutes },
+  { default: reviewRoutes },
 ] = await Promise.all([
   import('./server/router.mjs'), import('./server/engine-client.mjs'), import('./server/network.mjs'), import('./server/caddy.mjs'),
   import('./server/remote.mjs'), import('./access.mjs'),
   import('./server/routes/sessions.mjs'), import('./server/routes/git.mjs'), import('./server/routes/explorer.mjs'), import('./server/routes/files.mjs'),
   import('./server/routes/projects.mjs'), import('./server/routes/access.mjs'), import('./server/routes/options.mjs'), import('./server/routes/desktop.mjs'),
+  import('./server/routes/review.mjs'),
 ]);
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 
-const router = createRouter(sessionRoutes, gitRoutes, explorerRoutes, fileRoutes, projectRoutes, optionRoutes, desktopRoutes);
+const router = createRouter(sessionRoutes, gitRoutes, reviewRoutes, explorerRoutes, fileRoutes, projectRoutes, optionRoutes, desktopRoutes);
 const accessRouter = createRouter(accessRoutes);
 
 async function handle(req, res, external = false) {

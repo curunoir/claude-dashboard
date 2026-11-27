@@ -27,7 +27,9 @@ export default {
   '* /api/git/diff': async (req, res, { url }) => {
     const file = path.resolve(url.searchParams.get('file') || '');
     if (!(await isPathAllowed(file, req))) return sendJson(res, 403, { error: t('server.errors.fileOutsideProjects') });
-    try { return sendJson(res, 200, await fileVersions(file, url.searchParams.get('commit') || null)); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    // `base` (with `head`, and `from` for a renamed file): the diff of a review range instead
+    const q = url.searchParams, range = q.get('base') ? { base: q.get('base'), head: q.get('head') || '', from: q.get('from') || '' } : null;
+    try { return sendJson(res, 200, await fileVersions(file, q.get('commit') || null, range)); } catch (e) { return sendJson(res, 400, { error: e.message }); }
   },
   // Brings a file back to the last commit or to the index, deletes a new file or a folder of new files
   // (↶ / ↩ / 🗑 buttons of the "Modified files" tab)

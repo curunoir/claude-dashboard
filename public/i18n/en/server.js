@@ -34,6 +34,10 @@ export default {
     invalidCommit: 'invalid commit id',
     tooLargeForEditor: 'file too large for the editor (2 MB max)',
   },
+  review: {
+    invalidTarget: 'not a merge request URL',
+    toolMissing: '{tool} is not installed',
+  },
   worktree: {
     notAWorktree: 'not a git worktree: {path}',
     notInThisRepo: 'not a worktree of this repository: {path}',

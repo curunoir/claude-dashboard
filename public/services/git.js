@@ -24,8 +24,12 @@ export const readCommits = (dir, n, skip) => api(`/api/git/commits?dir=${encodeU
 /** Full message and files of a commit. */
 export const readCommit = (dir, hash) => api(`/api/git/commit?dir=${encodeURIComponent(dir)}&hash=${hash}`);
 
-/** Versions of a file (last commit and current, or before / after a commit). */
-export const readDiff = (file, commit) => api(`/api/git/diff?file=${encodeURIComponent(file)}${commit ? `&commit=${commit}` : ''}`);
+/**
+ * Versions of a file (last commit and current, or before / after a commit). `range` `{ base, head, from }`: those of a
+ * review (at `base`, under its old name `from` if renamed, and at `head`, or on disk without `head`).
+ */
+export const readDiff = (file, commit, range) => api(`/api/git/diff?file=${encodeURIComponent(file)}${commit ? `&commit=${commit}` : ''}`
+  + (range ? `&base=${range.base}&head=${range.head || ''}${range.from ? `&from=${encodeURIComponent(range.from)}` : ''}` : ''));
 
 /** Removes a worktree (not the main one). Returns `{ ok }` or `{ error, dirty }` (dirty: uncommitted changes). */
 export const removeWorktree = (path, force = false) => fetch('/api/worktree/remove', {

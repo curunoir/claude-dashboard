@@ -3,6 +3,7 @@
 import { BOARD_TOOL } from './mcp-tools.mjs';
 import { addCall } from './pricing.mjs';
 import { WORKFLOW_TOOL, workflowDir } from './workflows.mjs';
+import { mrUrlsIn } from '../public/core/mr-url.js';
 import { t, locale } from '../public/i18n/index.js';
 
 export const AGENT_TOOLS = new Set(['Agent', 'Task']); // the tool that launches a subagent (renamed Task → Agent depending on versions)
@@ -69,6 +70,9 @@ function bashActions(cmd = '') {
   return a;
 }
 
+/** A command that creates a merge request or a pull request (`glab mr create`, `gh pr create`): its output gives the URL. */
+export const createsMr = (cmd = '') => /(^|[\s;&|(])(gh(\.exe)?\s+pr\s+create|glab(\.exe)?\s+mr\s+create)\b/.test(String(cmd));
+
 /** A readable line for a tool call. */
 export function summarizeTool(name, input = {}) {
   const v = input.file_path || input.path || input.command || input.pattern || input.url || input.description || input.query || input.skill || (input.slug && input.text ? `${input.slug}: ${input.text}` : '') || input.prompt || input.text || input.slug || input.scope || '';
@@ -85,6 +89,7 @@ export function attachEvents(ctx) {
   // Achievements: tools of the running turn, model window (for the context %), Bash commands to count
   let turnTools = 0, modelWindow = 0;
   const achievementCalls = new Map();
+  const mrCalls = new Set(); // commands creating a merge request, whose result gives the URL (Review tab)
 
   // Processing indicator (like "✻ Noodling… (3m 42s · ↓ 19.9k tokens)" in the console): start of the turn, tokens
   // generated, current phase. Broadcast separately (not in the feed), at most twice per second.
@@ -207,6 +212,7 @@ export function attachEvents(ctx) {
           if (n) achievements.record('bulldozer', achievements.stat('lines', n));
           if (b.name === 'Bash') { const a = bashActions(String(b.input?.command || '')); if (a.length) achievementCalls.set(b.id, a); }
         }
+        if (b.type === 'tool_use' && (b.name === 'Bash' || b.name === 'PowerShell') && createsMr(b.input?.command)) mrCalls.add(b.id);
         if (b.type !== 'tool_use' || b.name === 'AskUserQuestion' || b.name === BOARD_TOOL) continue;
         if (AGENT_TOOLS.has(b.name)) ctx.launchAgent(b, parent);
         else {
@@ -222,6 +228,11 @@ export function attachEvents(ctx) {
         if (b.type !== 'tool_result') continue;
         const actions = achievementCalls.get(b.tool_use_id);
         if (actions) { achievementCalls.delete(b.tool_use_id); if (!b.is_error) for (const [f, id] of actions) achievements[f](id, 1); }
+        // Merge request just created (by the session or one of its subagents): added to those of the session
+        if (mrCalls.delete(b.tool_use_id) && !b.is_error) {
+          const urls = mrUrlsIn(resultText(b, Infinity));
+          if (urls.length) updateBoard({ mrs: urls }); // added to the list (engine/board.mjs)
+        }
         // Result of a tool: it completes its line (expandable in the page)
         const call = calls.get(b.tool_use_id);
         if (call) { calls.delete(b.tool_use_id); call.push({ ...call.ev, result: resultText(b), error: !!b.is_error }); }

@@ -68,7 +68,7 @@ for (const [name, { title, format }] of Object.entries(TYPE_TEXTS)) {
 const COMPOSITE_LAYOUTS = ['cards', 'timeline', 'rows'];
 const COMPOSITE_FIELDS = ['text', 'date', 'image', 'link', 'file'];
 // Fields that update_board carries for every session (header, list, decision cards) or that the engine manages alone
-const RESERVED_KEYS = new Set(['decisions', 'title', 'ticket', 'ticketUrl', 'description', 'project', 'step', 'status',
+const RESERVED_KEYS = new Set(['decisions', 'title', 'ticket', 'ticketUrl', 'mrs', 'description', 'project', 'step', 'status',
   'statusSummary', 'slug', 'cwd', 'sessionId', 'mode', 'stats', 'updatedAt', 'titlePinned', 'autoTitle', 'endedAt',
   'archivedAt', 'trackerPreview', 'driven', 'model', 'paused', 'stopped', 'busy', 'activity', 'seen', 'reportedSchemas', 'tracker',
   '__proto__', 'constructor', 'prototype']);

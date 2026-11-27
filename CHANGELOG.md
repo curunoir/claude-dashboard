@@ -4,6 +4,10 @@ What changed for people who use the dashboard, newest first. The commit history 
 
 ## 2026-11-27
 
+- New **Review** tab in the right panel: what the session produced as one diff, its branch compared with its base
+  (uncommitted changes included), so the work can be read before any merge request exists. The merge requests /
+  pull requests of the session (GitHub through `gh`, GitLab through `glab`) show there with their state, CI and a
+  link to the forge; a click on a file opens the diff of the whole branch or merge request in the editor. Read only.
 - Projects in WSL (opened as `\\wsl.localhost\<distro>\…`): their sessions now show under their project instead of
   "Terminal sessions", whatever the case of the path. Git runs there with the distribution's own git: the worktrees
   created from the terminal in WSL show with usable paths (opening a branch that has one no longer fails with

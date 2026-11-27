@@ -147,6 +147,22 @@ and the design of what is about to be built in visual form, with all the availab
   A selection in the editor shows a 💬 Comment button (no focus taken, the selection can still be copied); a click
   opens the remark bubble: Enter sends to the displayed session the file, the lines
   (`path:L12-L20`, with the version if it is a commit diff), the selected code and the remark.
+  Another tab, **Review** (spec `docs/specs/2026-11-27-review-tab.md`; right after "Modified files"), shows what the
+  session produced as one diff, for its author to judge it before the usual review (read only, nothing is written to
+  the forge). **Targets**: the branch of the session (its folder against its base, uncommitted and untracked files
+  included: `reviewBase()` takes the base of its merge request, otherwise origin's default branch, develop, main…) and
+  its merge requests / pull requests, GitHub and GitLab: the one of the branch (`mrOfBranch()`, asked to each remote),
+  those in `mrs` of the session JSON (URLs Claude declares through `update_board`, or printed by a successful
+  `gh pr create` / `glab mr create`: `createsMr()` of `driver/events.mjs`; they add up in `updateBoard`, `null`
+  clears). `server/forge.mjs` reads them through the `gh` and `glab` CLIs logged in on the PC (no shell, one minute
+  cache, one common shape: `normalizeGh`, `normalizeGlab`); without the CLI the branch target still works and the
+  tab says what is missing. Header (title, state, CI, `branch → base`, commits, files, lines, link to the forge), then
+  the files; a click opens the range diff in the editor (`openViewer` option `range`, `fileVersions(file, commit,
+  range)`). A merge request of another branch is fetched into `refs/dash/mr/<n>` when opened (`fetchMr`), one of
+  another repository only has its state and link. Routes `GET /api/review/targets`, `GET /api/review/range` (the
+  server chooses the refs, the page never sends a ref name), `/api/git/diff?base=&head=&from=`. URL parsing shared by
+  page, server and engine: `public/core/mr-url.js`. Read every 10 s while displayed, repainted only when the answer
+  changed. The reading guide written by Claude is the second delivery of the spec.
   A fourth tab, **Processes** (PC only, spec `docs/specs/2026-11-17-processes-tab.md`), lists what runs on the PC
   for development, in collapsible sections (`dash-processes-collapsed`): sessions of the displayed session's project,
   sessions of other projects, editors and terminals (VS Code, JetBrains, Orca, Windows Terminal, grouped by instance),
@@ -230,8 +246,8 @@ and the design of what is about to be built in visual form, with all the availab
   - `server/`: `server.mjs` starts HTTP (4747, 4749), assembles the route tables, relays the rest to the engine and
     serves `public/` (500 on exception, 404 if there is neither a route nor a file). `server/router.mjs`
     (`createRouter(...tables)`) maps `'GET /api/x'`, `:param` and `/*` to a handler and returns `null` without a route;
-    the tables are in `server/routes/` (sessions, git, explorer, files, projects, access, options, desktop: "PC only"
-    routes, `EXECUTABLES`). The topics have their module: `git`, `explorer`, `paths` (`isPathAllowed`), `network`,
+    the tables are in `server/routes/` (sessions, git, review, explorer, files, projects, access, options, desktop: "PC only"
+    routes, `EXECUTABLES`). The topics have their module: `git`, `forge`, `explorer`, `paths` (`isPathAllowed`), `network`,
     `caddy`, `remote` (`remoteGate`), `engine-client`, `consumption`. The in-page explorer routes are `/api/browse/*`
     (`/api/explorer` is the Windows explorer, PC only).
   - `engine/`: `routes.mjs`, `sessions.mjs`, `registry.mjs` (the `Map`s `sessions` and `drivers`), `board.mjs`

@@ -1,6 +1,7 @@
 // Git: modified files, commits, versions of a file, ignored files.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { execGit, spawnGit, fromGit } from '../git-exec.mjs';
 import { t } from '../public/i18n/index.js';
 
@@ -160,13 +161,116 @@ export async function gitCommit(dir, hash) {
   return { root: path.normalize(root), hash: full, subject, body: (body || '').trim(), author, date: (date || '').trim(), files };
 }
 
+// --- Review: a branch against its base, a merge request (docs/specs/2026-11-27-review-tab.md) -------------------------
+
+const COMMIT_ID = /^[0-9a-f]{4,40}$/i;
+const RANGE_STATES = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'added', T: 'modified' };
+
+/**
+ * Files of `git diff --name-status -z` and `--numstat -z` (same range, renames detected): `[{ rel, state, from?,
+ * insertions, deletions, binary }]`, `from` being the old name of a renamed file. Pure.
+ */
+export function parseRangeFiles(nameStatus, numstat) {
+  const counts = new Map(), nums = String(numstat || '').split('\0');
+  for (let i = 0; i < nums.length; i++) {
+    const [plus, minus, name] = nums[i].split('\t');
+    if (minus === undefined) continue;
+    // A rename has an empty name here, followed by the old and the new one
+    const rel = name || nums[i += 2];
+    if (rel) counts.set(rel, { insertions: Number(plus) || 0, deletions: Number(minus) || 0, binary: plus === '-' });
+  }
+  const files = [], names = String(nameStatus || '').split('\0');
+  for (let i = 0; i + 1 < names.length; i++) {
+    const code = names[i][0], moved = code === 'R' || code === 'C';
+    const from = moved ? names[++i] : null, rel = names[++i];
+    if (!rel) continue;
+    files.push({ rel, state: RANGE_STATES[code] || 'modified', ...(code === 'R' ? { from } : {}), insertions: 0, deletions: 0, binary: false, ...counts.get(rel) });
+  }
+  return files;
+}
+
+const commitOf = (root, ref) => git(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then(o => o.trim() || null, () => null);
+const MAIN_BRANCHES = ['develop', 'main', 'master', 'dev', 'trunk'];
+
+/**
+ * What a branch is compared with: `{ name, sha }`, or null (no candidate). `wanted`: the target branch of its merge
+ * request, on `remote`. Otherwise the default branch of origin, then develop, main, master… (remote first: the local
+ * one may be behind). A main branch itself is compared with its upstream: what it has not pushed.
+ */
+export async function reviewBase(root, { wanted, remote = 'origin', branch } = {}) {
+  const candidates = [];
+  if (wanted) candidates.push(`${remote}/${wanted}`, `origin/${wanted}`, wanted);
+  if (MAIN_BRANCHES.includes(branch)) candidates.push(`${branch}@{u}`);
+  const head = (await git(root, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).catch(() => '')).trim();
+  if (head) candidates.push(head);
+  candidates.push(...MAIN_BRANCHES.map(b => `origin/${b}`), ...MAIN_BRANCHES);
+  for (const name of candidates) {
+    const sha = await commitOf(root, name);
+    if (sha) return { name: name.endsWith('@{u}') ? (await git(root, ['rev-parse', '--abbrev-ref', name]).catch(() => name)).trim() : name, sha };
+  }
+  return null;
+}
+
+/**
+ * The diff to review: from the merge base of `base` and `head` to `head`, or to the working tree when `head` is empty
+ * (uncommitted and untracked files included: the work of a session is judged before it is committed). Returns
+ * `{ root, mergeBase, head, headSha, commits, fingerprint, files }`; `fingerprint` changes as soon as the diff does.
+ */
+export async function gitRange(dir, { base, head = '' }) {
+  if (!COMMIT_ID.test(base) || (head && !COMMIT_ID.test(head))) throw new Error(t('server.git.invalidCommit'));
+  const root = await topLevel(dir), tip = head || 'HEAD';
+  const headSha = await commitOf(root, tip);
+  const mergeBase = (await git(root, ['merge-base', base, tip]).catch(() => base)).trim() || base;
+  const range = head ? [mergeBase, head] : [mergeBase];
+  const [nameStatus, numstat, count] = await Promise.all([
+    git(root, ['diff', '-M', '--name-status', '-z', ...range]),
+    git(root, ['diff', '-M', '--numstat', '-z', ...range]),
+    git(root, ['rev-list', '--count', `${mergeBase}..${tip}`]).catch(() => '0'),
+  ]);
+  const files = parseRangeFiles(nameStatus, numstat);
+  let untracked = '';
+  if (!head) {
+    for (const rel of (await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)) {
+      const st = fs.statSync(path.join(root, rel), { throwIfNoEntry: false });
+      if (!st?.isFile()) continue;
+      untracked += `${rel}:${st.size}:${st.mtimeMs}\n`;
+      // Lines of a new file: counted when it is small enough to be read at each reading of the tab
+      const text = st.size <= 512 * 1024 ? fs.readFileSync(path.join(root, rel)) : null;
+      const binary = !!text && text.subarray(0, 8000).includes(0);
+      files.push({ rel, state: 'untracked', insertions: text && !binary ? text.toString('utf8').split('\n').length - (text.at(-1) === 10 ? 1 : 0) : 0, deletions: 0, binary });
+    }
+  }
+  const fingerprint = createHash('sha1').update([mergeBase, headSha, nameStatus, numstat, untracked].join('\n')).digest('hex').slice(0, 16);
+  return {
+    root: path.normalize(root), mergeBase, head, headSha, commits: Number(count.trim()) || 0, fingerprint,
+    files: files.map(f => ({ ...f, path: path.join(root, f.rel) })),
+  };
+}
+
+/**
+ * Makes the head commit of a merge request of this repo available here and returns its id: already there (its branch
+ * is local or fetched), otherwise fetched from its remote into `refs/dash/mr/<n>`, without touching the working tree.
+ */
+export async function fetchMr(root, mr) {
+  if (mr.head && await commitOf(root, mr.head)) return mr.head;
+  if (!mr.remote) return null;
+  const ref = `refs/dash/mr/${mr.number}`;
+  const source = mr.forge === 'github' ? `refs/pull/${mr.number}/head` : `refs/merge-requests/${mr.number}/head`;
+  await execGit(root, ['fetch', '--no-tags', '--quiet', mr.remote, `+${source}:${ref}`], { timeout: 60_000 });
+  return (mr.head && await commitOf(root, mr.head)) || commitOf(root, ref);
+}
+
 const EDITOR_MAX_SIZE = 2 * 1024 * 1024;
 /**
  * Two versions of a file for the editor. Without `commit`: the one of the last commit (empty if new) and the current
  * one (empty if deleted). With `commit`: the one before this commit and the one it left (the diff of that time).
+ * With `range` `{ base, head, from }` (commit ids): the one at `base` (under its old name `from` if renamed) and the
+ * one at `head`, or the current one without `head` (the diff of a review).
  */
-export async function fileVersions(file, commit) {
-  if (commit && !/^[0-9a-f]{4,40}$/i.test(commit)) throw new Error(t('server.git.invalidCommit'));
+export async function fileVersions(file, commit, range = null) {
+  if (commit && !COMMIT_ID.test(commit)) throw new Error(t('server.git.invalidCommit'));
+  if (range && (!COMMIT_ID.test(range.base) || (range.head && !COMMIT_ID.test(range.head)))) throw new Error(t('server.git.invalidCommit'));
+  if (range) return rangeVersions(file, range);
   const dir = fs.existsSync(file) && fs.statSync(file).isDirectory() ? file : path.dirname(file);
   let root = null;
   try { root = await topLevel(fs.existsSync(dir) ? dir : path.dirname(dir)); } catch { /* outside git */ }
@@ -188,5 +292,26 @@ export async function fileVersions(file, commit) {
     path: file, root, binary, exists: !!current, tracked: original !== null,
     original: binary ? '' : text(original), current: binary ? '' : text(current),
     modified: !!root && (original === null ? !!current : !current || !original.equals(current)),
+  };
+}
+
+/** `fileVersions` for a review range (same answer). The file may be gone from the disk: git starts from a folder that exists. */
+async function rangeVersions(file, { base, head, from }) {
+  let d = path.dirname(file);
+  while (!fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
+  const root = await topLevel(d);
+  const rel = path.relative(root, file).replace(/\\/g, '/');
+  if (!rel || rel.startsWith('..')) throw new Error(t('server.git.outsideRepo'));
+  const old = typeof from === 'string' && from && !from.startsWith('/') && !from.split('/').includes('..') ? from : rel;
+  const version = spec => git(root, ['show', spec], { raw: true }).catch(() => null);
+  const current = head ? await version(`${head}:${rel}`) : fs.statSync(file, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(file) : null;
+  if (current && current.length > EDITOR_MAX_SIZE) throw new Error(t('server.git.tooLargeForEditor'));
+  const original = await version(`${base}:${old}`);
+  const binary = [current, original].some(b => b && b.subarray(0, 8000).includes(0));
+  const text = b => (b ? b.toString('utf8') : '');
+  return {
+    path: file, root, binary, exists: !!current, tracked: original !== null,
+    original: binary ? '' : text(original), current: binary ? '' : text(current),
+    modified: original === null ? !!current : !current || !original.equals(current),
   };
 }

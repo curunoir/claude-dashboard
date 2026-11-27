@@ -36,7 +36,7 @@ export function attachMcpTools(ctx) {
         const { fields, ignored } = boardFields(migrateSession(state));
         updateBoard(fields);
         if (Array.isArray(fields.decisions) && fields.decisions.length) pushEvent({ id: newId(), t: 'decisions', decisions: fields.decisions });
-        return { content: [{ type: 'text', text: ignored.length ? `board updated; ignored (managed by the dashboard, or not an http(s) URL): ${ignored.join(', ')}` : 'board updated' }] };
+        return { content: [{ type: 'text', text: ignored.length ? `board updated; ignored (managed by the dashboard, or not a valid URL): ${ignored.join(', ')}` : 'board updated' }] };
       }, { alwaysLoad: true }), // loaded up front: no ToolSearch before the first call
 
     // Other dashboard sessions (like the Orca skills, but in the same worktree by default)

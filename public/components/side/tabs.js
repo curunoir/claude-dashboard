@@ -1,4 +1,4 @@
-// Right panel: "Tracker", "Modified files", "Explorer" and "Processes" (PC only) tabs. An effect redraws it when the displayed
+// Right panel: "Tracker", "Modified files", "Review", "Explorer" and "Processes" (PC only) tabs. An effect redraws it when the displayed
 // session, the tab or the git state change; the Tracker content is drawn by the function app.js passes.
 import { signal, effect } from '../../core/signals.js';
 import { current, detail, sideTab, gitStatus } from '../../core/state.js';
@@ -8,6 +8,8 @@ import { readGitStatus } from '../../services/git.js';
 import { renderExplorer } from '../explorer/explorer.js';
 import { renderCommits, expandedCommit } from './commits.js';
 import { paintFiles } from './files.js';
+import { filesLayout } from '../git-files.js';
+import { review, reviewCount, renderReview, refreshReview } from './review.js';
 import { processes, processCount, renderProcesses, refreshProcesses } from './processes.js';
 import { onPc } from '../../services/processes.js';
 import { t } from '../../i18n/index.js';
@@ -26,6 +28,11 @@ const filesLabel = d => {
   return `${t('side.tabs.files')}${n ? ` <span class="count">${n}</span>` : ''}`;
 };
 
+const reviewLabel = d => {
+  const n = reviewCount(d);
+  return `${t('side.tabs.review')}${n ? ` <span class="count">${n}</span>` : ''}`;
+};
+
 const processesLabel = () => {
   const { n, warn } = processCount();
   return `${t('side.tabs.processes')}${n ? ` <span class="count${warn ? ' warn' : ''}">${n}</span>` : ''}`;
@@ -36,6 +43,7 @@ function sideTabs(d) {
   return `<div class="right-tabs">
     <button class="tab ${sideTab() === 'tracker' ? 'on' : ''}" data-right-tab="tracker">${t('side.tabs.tracker')}</button>
     <button class="tab ${sideTab() === 'files' ? 'on' : ''}" data-right-tab="files">${filesLabel(d)}</button>
+    <button class="tab ${sideTab() === 'review' ? 'on' : ''}" data-right-tab="review" title="${t('side.tabs.reviewTitle')}">${reviewLabel(d)}</button>
     <button class="tab ${sideTab() === 'explorer' ? 'on' : ''}" data-right-tab="explorer" title="${t('side.tabs.explorerTitle')}">${t('side.tabs.explorer')}</button>
     ${onPc() ? `<button class="tab ${sideTab() === 'processes' ? 'on' : ''}" data-right-tab="processes" title="${t('side.tabs.processesTitle')}">${processesLabel()}</button>` : ''}
   </div>`;
@@ -67,6 +75,7 @@ function followPolling(slug) {
     const d = detail();
     if (!d?.cwd || d.slug !== slug || d.slug !== current() || document.querySelector('.viewer') || document.hidden) return;
     if (sideTab() === 'processes') refreshProcesses();
+    else if (sideTab() === 'review') refreshReview(d);
     else if (sideTab() === 'files') refreshGit(d, $('#commits-zone')?.dataset.slug === d.slug ? $('#commits-zone') : null);
     else countGitFiles(d);
   }, 10_000);
@@ -86,17 +95,27 @@ export function mountSide(el, renderTracker) {
   });
   const sideEffect = effect(() => {
     const d = detail(), tab = sideTab() === 'processes' && !onPc() ? 'tracker' : sideTab();
-    const git = gitStatus(), procs = processes(); rerun();
+    const git = gitStatus(), procs = processes(), rev = review(), layoutNow = filesLayout(); rerun();
     if (!d) return stopPolling();
     followPolling(d.slug);
     const changed = !last || last.d !== d || last.tab !== tab;
     // Only the processes changed outside their tab: update the count, without repainting
     const onlyProcs = last && !changed && last.git === git && last.procs !== procs;
-    last = { d, tab, git, procs };
+    // The Review tab repaints for its own reading (or the list / tree layout), not for the git state
+    const reviewChanged = changed || last.rev !== rev || last.layout !== layoutNow;
+    last = { d, tab, git, procs, rev, layout: layoutNow };
     if (tab === 'processes' && d.cwd) return renderProcesses(d, sideTabs(d));
     const pb = el.querySelector('[data-right-tab="processes"]');
     if (pb) pb.innerHTML = processesLabel();
     if (onlyProcs) return;
+    if (tab === 'review' && d.cwd) {
+      if (reviewChanged) renderReview(d, sideTabs(d));
+      else { const b = el.querySelector('[data-right-tab="files"]'); if (b) b.innerHTML = filesLabel(d); }
+      if (changed) { countGitFiles(d); refreshReview(d); }
+      return;
+    }
+    const rb = el.querySelector('[data-right-tab="review"]');
+    if (rb) rb.innerHTML = reviewLabel(d);
     // Only the git state changed outside the files tab: update the count, without repainting
     if (!changed && tab !== 'files') {
       const b = el.querySelector('[data-right-tab="files"]');

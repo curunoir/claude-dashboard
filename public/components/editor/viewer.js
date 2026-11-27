@@ -15,7 +15,8 @@ import { t } from '../../i18n/index.js';
  * Large window on a file: side-by-side diff with its version from the last commit if it changed, otherwise
  * read-only. From the list of modified files, ← and → go to the previous or next file.
  * `options.files`: the git files of that list (modified, or those of commit `options.commit`), shown in a
- * panel next to the folder tree.
+ * panel next to the folder tree. `options.range` `{ base, head, baseName, headName }`: the diff of a review instead
+ * (from commit `base` to commit `head`, or to the file on disk without `head`), `options.files` being its files.
  */
 export async function openViewer(path, list = null, index = 0, options = {}) {
   document.querySelector('.viewer')?.remove();
@@ -47,7 +48,7 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
   };
   if (options.files?.length) {
     const n = options.files.length;
-    listVis.innerHTML = `<div class="m vis-list-head">${options.commit ? t('editor.viewer.commitFiles') : t('editor.viewer.modifiedFiles')} · ${n}</div>`
+    listVis.innerHTML = `<div class="m vis-list-head">${options.range ? t('side.review.viewerFiles') : options.commit ? t('editor.viewer.commitFiles') : t('editor.viewer.modifiedFiles')} · ${n}</div>`
       + `<div class="vis-scroll">${filesHtml(options.files, 'data-vis-list')}</div>`;
     listVis.hidden = false;
     v.querySelector('[data-vis-tab="list"]').textContent = t('editor.viewer.modifiedTabCount', { n });
@@ -62,12 +63,12 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
   });
 
   // Tree on the left, centred on the open file: one click shows neighbouring files (as a diff if they
-  // changed, marked by their state). Not for a commit diff, where today's tree would not tell the same story.
+  // changed, marked by their state). Not for a commit or review diff, where today's tree would not tell the same story.
   const treeVis = v.querySelector('.vis-tree');
   const visOpen = new Set(explorerState.openDirs);
   const absKey = a => a.replace(/\//g, '\\').toLowerCase();
   async function paintTree(c, reveal = false) {
-    if (options.commit || !detail()?.cwd) return;
+    if (options.commit || options.range || !detail()?.cwd) return;
     try { await loadExplorer(detail()); } catch { return; }
     const base = absKey(explorerState.dir.replace(/[\\/]+$/, '')) + '\\';
     if (!absKey(c).startsWith(base)) { treeVis.hidden = true; return layout(); } // file outside the session folder
@@ -152,11 +153,15 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
       listVis.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
     }
     let d, monaco;
-    try { [d, monaco] = await Promise.all([readDiff(c, options.commit), loadMonaco()]); }
+    // Review diff: a renamed file is compared with its old name
+    const range = options.range && { ...options.range, from: options.files?.find(x => absKey(x.path) === absKey(c))?.from };
+    try { [d, monaco] = await Promise.all([readDiff(c, options.commit, range), loadMonaco()]); }
     catch (e) { body.innerHTML = `<p class="m">${esc(e.message)}</p>`; return; }
     if (currentPath !== c || !v.isConnected) return; // we moved to another file in the meantime
     // Diff of a commit ("as of then"): before the commit against what it left
-    v.querySelector('.vis-state').textContent = options.commit
+    v.querySelector('.vis-state').textContent = range
+      ? `${options.title || ''} · ${d.binary ? t('editor.viewer.state.binary') : !d.exists ? t('side.review.stateDeleted') : !d.tracked ? t('side.review.stateAdded') : t('side.review.stateModified')}`
+      : options.commit
       ? `${options.title || options.commit} · ${d.binary ? t('editor.viewer.state.binary') : !d.exists ? t('editor.viewer.state.deletedByCommit') : !d.tracked ? t('editor.viewer.state.addedByCommit') : t('editor.viewer.state.modifiedByCommit')}`
       : d.binary ? t('editor.viewer.state.binary') : !d.root ? t('editor.viewer.state.notGit')
       : !d.exists ? t('editor.viewer.state.deleted') : !d.tracked ? t('editor.viewer.state.untracked') : d.modified ? t('editor.viewer.state.modified') : t('editor.viewer.state.unchanged');
@@ -172,11 +177,11 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
       // Unchanged parts are folded: we land on the changes (a click unfolds them)
       editor = monaco.editor.createDiffEditor(body, { ...common, renderSideBySide: sideBySide, originalEditable: false, hideUnchangedRegions: { enabled: true, contextLineCount: 3 } });
       editor.setModel({ original: monaco.editor.createModel(d.original, lang), modified: monaco.editor.createModel(d.current, lang) });
-      remarksOn(v, editor.getOriginalEditor(), c, lang, options.commit ? t('editor.viewer.version.beforeCommit', { hash: options.commit.slice(0, 10) }) : t('editor.viewer.version.lastCommit'));
-      remarksOn(v, editor.getModifiedEditor(), c, lang, options.commit ? t('editor.viewer.version.leftByCommit', { hash: options.commit.slice(0, 10) }) : null);
+      remarksOn(v, editor.getOriginalEditor(), c, lang, range ? t('side.review.versionBase', { base: range.baseName }) : options.commit ? t('editor.viewer.version.beforeCommit', { hash: options.commit.slice(0, 10) }) : t('editor.viewer.version.lastCommit'));
+      remarksOn(v, editor.getModifiedEditor(), c, lang, range ? headVersion(range) : options.commit ? t('editor.viewer.version.leftByCommit', { hash: options.commit.slice(0, 10) }) : null);
     } else {
       editor = monaco.editor.create(body, { ...common, value: d.current, language: lang });
-      remarksOn(v, editor, c, lang, options.commit ? t('editor.viewer.version.commit', { hash: options.commit.slice(0, 10) }) : null);
+      remarksOn(v, editor, c, lang, range ? headVersion(range) : options.commit ? t('editor.viewer.version.commit', { hash: options.commit.slice(0, 10) }) : null);
     }
     // Opened from a search result: the found line centred, highlighted (without selecting it, which
     // would open the remark bubble)
@@ -207,6 +212,9 @@ export async function openViewer(path, list = null, index = 0, options = {}) {
   layout();
   show(path);
 }
+
+/** Version label of the right side of a review diff: null for the file on disk (the current one, as elsewhere). */
+const headVersion = range => (range.head ? t('side.review.versionHead', { head: range.headName || range.head.slice(0, 10) }) : null);
 
 /**
  * Handles between the panels: "l" sets the width of the left panel (tree, or list alone), "r" that of

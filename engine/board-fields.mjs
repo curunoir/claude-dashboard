@@ -1,5 +1,6 @@
 // Fields a session may set through its update_board tool (Tracker panel, header). Pure, tested in
-// tests/board-fields.test.mjs.
+// tests/security.test.mjs.
+import { cleanMrUrls } from '../public/core/mr-url.js';
 
 /**
  * Keys the engine owns: identity of the session (folder, Claude conversation, permission mode), counters, what the
@@ -8,14 +9,14 @@
  */
 export const ENGINE_KEYS = new Set(['slug', 'cwd', 'project', 'mode', 'prePlanMode', 'autoMode', 'sessionId', 'driven', 'model', 'modelChoice', 'stats', 'seen',
   'updatedAt', 'endedAt', 'archivedAt', 'titlePinned', 'autoTitle', 'trackerPreview', 'reportedSchemas', 'tracker',
-  'parent', 'paused', 'stopped', 'busy', 'activity', 'receivedAt', '__proto__', 'constructor', 'prototype']);
+  'reviews', 'parent', 'paused', 'stopped', 'busy', 'activity', 'receivedAt', '__proto__', 'constructor', 'prototype']);
 
 /** http(s) URL, or null: a link of the panel never gets another scheme (javascript:, file:…). */
 const httpUrl = v => (typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) ? v.trim() : null);
 
 /**
  * Fields of update_board that may be merged: without the engine's keys, `ticketUrl` only as an http(s) URL (or null to
- * clear it). Returns `{ fields, ignored }` (`ignored`: the keys left out, told to Claude).
+ * clear it), `mrs` only as merge request / pull request URLs (Review tab). Returns `{ fields, ignored }` (`ignored`: the keys left out, told to Claude).
  */
 export function boardFields(input) {
   const fields = {}, ignored = [];
@@ -23,6 +24,11 @@ export function boardFields(input) {
   for (const [k, v] of Object.entries(input)) {
     if (ENGINE_KEYS.has(k)) { ignored.push(k); continue; }
     if (k === 'ticketUrl' && v !== null && !httpUrl(v)) { ignored.push(k); continue; }
+    if (k === 'mrs' && v !== null) {
+      const urls = cleanMrUrls(v);
+      if (urls.length) fields.mrs = urls; else ignored.push(k);
+      continue;
+    }
     fields[k] = k === 'ticketUrl' && v !== null ? httpUrl(v) : v;
   }
   return { fields, ignored };

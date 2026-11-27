@@ -16,6 +16,9 @@ You fill it with the `mcp__dashboard__update_board` tool. It **merges** the fiel
   (`status: "done"`);
 - never on every tool call.
 
+`mrs`: the URLs of the merge requests / pull requests the session creates or works on (an array; they add up, `null`
+clears the list). They feed the Review tab.
+
 `status`: `waiting` (you are waiting for the developer) or `working`; the page also handles it on its own, you can omit it.
 `statusSummary`: 2 to 4 words shown in the list ("2 decisions", "mockup v2 to validate", "execution 4/7").
 The possible steps (`step`) and the panel blocks depend on the tracker profile: see the end of these instructions.

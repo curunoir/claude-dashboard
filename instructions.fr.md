@@ -16,6 +16,9 @@ Tu le remplis avec l'outil `mcp__dashboard__update_board`. Il **fusionne** les c
   (`status: "done"`) ;
 - jamais à chaque appel d'outil.
 
+`mrs` : les URL des merge requests / pull requests que la session crée ou sur lesquelles elle travaille (un tableau ;
+elles s'ajoutent, `null` vide la liste). Elles alimentent l'onglet Relecture.
+
 `status` : `waiting` (tu attends le développeur) ou `working` ; la page le gère aussi seule, tu peux l'omettre.
 `statusSummary` : 2 à 4 mots affichés dans la liste (« 2 décisions », « maquette v2 à valider », « exécution 4/7 »).
 Les étapes possibles (`step`) et les blocs du panneau dépendent du profil de suivi : voir la fin de ces consignes.

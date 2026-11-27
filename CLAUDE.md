@@ -149,7 +149,12 @@ and the design of what is about to be built in visual form, with all the availab
   (`path:L12-L20`, with the version if it is a commit diff), the selected code and the remark.
   Another tab, **Review** (spec `docs/specs/2026-11-27-review-tab.md`; right after "Modified files"), shows what the
   session produced as one diff, for its author to judge it before the usual review (read only, nothing is written to
-  the forge). **Targets**: the branch of the session (its folder against its base, uncommitted and untracked files
+  the forge). It follows **where the session really worked**: the git folders of the files it wrote (`workDirs` of
+  the session JSON, engine key, most recent first; `engine/work-dirs.mjs`: the driver reports the git root of each
+  Edit / Write / MultiEdit / NotebookEdit of the session and its subagents, a session from before gets them once from
+  its history, `backfillWorkDirs`), since a session started in a repo often works in a worktree it created; without
+  any, its own folder. **Targets**: the branch of each of these folders (`branch` for the session's folder,
+  `branch:<dir>` for another one; the folder against its base, uncommitted and untracked files
   included: `reviewBase()` takes the base of its merge request, otherwise origin's default branch, develop, main…) and
   its merge requests / pull requests, GitHub and GitLab: the one of the branch (`mrOfBranch()`, asked to each remote),
   those in `mrs` of the session JSON (URLs Claude declares through `update_board`, or printed by a successful

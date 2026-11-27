@@ -16,6 +16,9 @@ This is not a code review tool. It is for the author of the session to understan
 
 ## What the tab shows
 
+- **Where**: the git folders the session wrote files in (a worktree it created, another repository), most recent
+  first; its own folder when it wrote nowhere. A session started in a repo and working in a worktree is reviewed in
+  that worktree.
 - **Targets**: what can be read.
   - The **branch of the session**, always there: its folder compared with its base, uncommitted changes included, so
     the work can be judged before any merge request exists.
@@ -79,6 +82,13 @@ editor's existing 💬 bubble.
 - **Page**: `services/review.js`, `components/side/review.js` (`renderReview(d, bar)`), tab in
   `components/side/tabs.js` (count = merge requests), read again every 10 s while displayed (repainted only when the
   answer changed). `openViewer` gets `options.range`.
+
+- **Work folders** (`engine/work-dirs.mjs`): `workDirs` in the session JSON (engine key). The driver reports the git
+  root of each file written by Edit / Write / MultiEdit / NotebookEdit (session and subagents) when it changes;
+  `updateBoard` puts it first in the list (8 at most). A session without the key gets it once from its history
+  (`backfillWorkDirs`, when its feed is read or it is resumed). Files written through shell commands are not seen.
+  The page reads the merge requests of each folder and names its target `branch` (folder of the session) or
+  `branch:<dir>`; the guide request carries `dir`, and Claude reads the diff with `git -C <dir>`.
 
 ### Delivery 2: the guide
 

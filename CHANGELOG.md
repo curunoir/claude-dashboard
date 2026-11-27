@@ -8,6 +8,8 @@ What changed for people who use the dashboard, newest first. The commit history 
   (uncommitted changes included), so the work can be read before any merge request exists. The merge requests /
   pull requests of the session (GitHub through `gh`, GitLab through `glab`) show there with their state, CI and a
   link to the forge; a click on a file opens the diff of the whole branch or merge request in the editor. Read only.
+- Review tab: it follows where the session really worked. A session started in a repository that created a worktree
+  and edited there is reviewed in that worktree (its branch, its merge request), not in the folder it was started in.
 - Review tab, **reading guide**: "Prepare the guide" asks the session to explain what it produced: what was asked,
   what was done, what it changed on top, what it did not do, its doubts, then the changes grouped by topic in reading
   order, each with what to check. From a step, the editor follows that path (step recalled above the diff, lines

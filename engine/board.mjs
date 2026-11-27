@@ -7,6 +7,7 @@ import { sessions } from './registry.mjs';
 import { broadcast } from './broadcast.mjs';
 import { onMockups, recordParallel } from './achievement-counters.mjs';
 import { cleanMrUrls } from '../public/core/mr-url.js';
+import { withWorkDir } from './work-dirs.mjs';
 
 export const SESSIONS_DIR = path.join(DASH_DIR, 'sessions');
 
@@ -52,7 +53,7 @@ export function markSeen(slug, id) {
 /**
  * Merges fields into the state of a session (null clears), writes it to disk and notifies the page. Merge requests
  * (`mrs`, Review tab) add up: those Claude declares and those the driver saw being created; reading guides (`reviews`)
- * merge per target.
+ * merge per target; `workDir` (a git folder the session just edited in) goes first in `workDirs`.
  */
 export function updateBoard(slug, fields) {
   const s = sessions.get(slug);
@@ -61,6 +62,7 @@ export function updateBoard(slug, fields) {
     if (k === 'slug') continue;
     // Renamed by hand: the title no longer moves, the one Claude proposes is kept for a return to the automatic name
     if (k === 'title' && s.data.titlePinned) { s.data.autoTitle = v; continue; }
+    if (k === 'workDir') { if (typeof v === 'string') s.data.workDirs = withWorkDir(s.data.workDirs, v); continue; }
     if (v === null) delete s.data[k];
     else s.data[k] = k === 'mrs' ? cleanMrUrls([...(s.data.mrs || []), ...(Array.isArray(v) ? v : [])])
       : k === 'reviews' ? { ...s.data.reviews, ...v } : v;

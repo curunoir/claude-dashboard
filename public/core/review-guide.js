@@ -69,13 +69,17 @@ const COMMIT_ID = /^[0-9a-f]{7,40}$/i, STATES = ['modified', 'added', 'deleted',
 
 /**
  * The request for a guide as the page sends it (the diff it shows), checked before it goes into a message to Claude:
- * `{ target, baseName, headName, mergeBase, head, fingerprint, files }`, or null. `target` is `branch` or a merge
- * request URL already normalised (`isTarget`), names are single-line, ids are commit ids, 400 files at most.
+ * `{ target, dir, baseName, headName, mergeBase, head, fingerprint, files }`, or null. `dir` is the git folder of the
+ * diff (the session may have worked in a worktree, not in its own folder); `target` is `branch` (the folder of the
+ * session), `branch:<dir>` (another work folder) or a merge request URL already normalised (`isTarget`). Names are
+ * single-line, ids are commit ids, 400 files at most.
  */
 export function reviewRequest(body, isTarget = () => false) {
   const b = body && typeof body === 'object' ? body : {};
   const line = (v, max) => text(v, max).replace(/[\r\n\t`]+/g, ' ').trim();
-  if (b.target !== 'branch' && !isTarget(b.target)) return null;
+  const dir = line(b.dir, 400).replace(/["'$]/g, '');
+  if (!dir || dir !== b.dir) return null;
+  if (b.target !== 'branch' && b.target !== `branch:${dir}` && !isTarget(b.target)) return null;
   if (!COMMIT_ID.test(b.mergeBase || '') || (b.head && !COMMIT_ID.test(b.head))) return null;
   if (!Array.isArray(b.files) || !b.files.length) return null;
   const files = [];
@@ -85,7 +89,7 @@ export function reviewRequest(body, isTarget = () => false) {
   }
   if (!files.length) return null;
   return {
-    target: b.target, baseName: line(b.baseName, 200) || b.mergeBase, headName: line(b.headName, 200), mergeBase: b.mergeBase, head: b.head || '',
+    target: b.target, dir, baseName: line(b.baseName, 200) || b.mergeBase, headName: line(b.headName, 200), mergeBase: b.mergeBase, head: b.head || '',
     fingerprint: /^[0-9a-f]{8,40}$/i.test(b.fingerprint || '') ? b.fingerprint : '', files,
   };
 }

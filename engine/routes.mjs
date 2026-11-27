@@ -10,7 +10,7 @@ import { feedFromHistory, agentFeedFromHistory, MODES, FILES_DIR, attachmentUrl 
 import { sendJson, readBody, readBinary, serveFile, applyLanguage, norm, logError } from '../common.mjs';
 import { t, LANGUAGES } from '../public/i18n/index.js';
 import * as trackers from '../trackers.mjs';
-import { sessions, drivers, resumable, newSession, resume, endSession, reloadSession, summarize, workInProgress } from './sessions.mjs';
+import { sessions, drivers, resumable, newSession, resume, backfillWorkDirs, endSession, reloadSession, summarize, workInProgress } from './sessions.mjs';
 import { sseClients, broadcast, broadcastRestarting } from './broadcast.mjs';
 import { SESSIONS_DIR, updateBoard, count, markSeen } from './board.mjs';
 import { ARCHIVE_DIR, readOptions, OPTIONS_FILE, archiveSession, archiveOf, autoArchive } from './archives.mjs';
@@ -344,7 +344,9 @@ const action = name => async (req, res, { params: { slug } }) => {
   const data = sessions.get(slug)?.data;
   if (name === 'feed') {
     if (drivers.has(slug)) return sendJson(res, 200, drivers.get(slug).feed);
-    return sendJson(res, 200, resumable(data) && data.sessionId ? await feedFromHistory(slug, data.sessionId, data.cwd) : []);
+    const feed = resumable(data) && data.sessionId ? await feedFromHistory(slug, data.sessionId, data.cwd) : [];
+    backfillWorkDirs(slug, feed);
+    return sendJson(res, 200, feed);
   }
   if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
   if (!drivers.has(slug) && !resumable(data)) return sendJson(res, 409, err('cannotResume'));

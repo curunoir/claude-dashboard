@@ -9,7 +9,7 @@ import { cleanMrUrls } from '../public/core/mr-url.js';
  */
 export const ENGINE_KEYS = new Set(['slug', 'cwd', 'project', 'mode', 'prePlanMode', 'autoMode', 'sessionId', 'driven', 'model', 'modelChoice', 'stats', 'seen',
   'updatedAt', 'endedAt', 'archivedAt', 'titlePinned', 'autoTitle', 'trackerPreview', 'reportedSchemas', 'tracker',
-  'reviews', 'parent', 'paused', 'stopped', 'busy', 'activity', 'receivedAt', '__proto__', 'constructor', 'prototype']);
+  'reviews', 'workDirs', 'workDir', 'parent', 'paused', 'stopped', 'busy', 'activity', 'receivedAt', '__proto__', 'constructor', 'prototype']);
 
 /** http(s) URL, or null: a link of the panel never gets another scheme (javascript:, file:…). */
 const httpUrl = v => (typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) ? v.trim() : null);

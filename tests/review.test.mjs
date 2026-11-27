@@ -138,11 +138,30 @@ test('readingPath: steps in order, files outside the path, files gone from the d
 
 test('reviewRequest: only a checked diff goes into the message to Claude', async () => {
   const { reviewRequest } = await import('../public/core/review-guide.js');
-  const ok = { target: 'branch', baseName: 'origin/main', headName: 'x\n`rm`', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }, { rel: '../b', state: 'x' }] };
-  assert.deepEqual(reviewRequest(ok), { target: 'branch', baseName: 'origin/main', headName: 'x rm', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }] });
+  const dir = 'D:\\repos\\app.worktrees\\1234';
+  const ok = { target: 'branch', dir, baseName: 'origin/main', headName: 'x\n`rm`', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }, { rel: '../b', state: 'x' }] };
+  // Another work folder of the session is a target too, only under its own name
+  assert.equal(reviewRequest({ ...ok, target: `branch:${dir}` }).target, `branch:${dir}`);
+  assert.equal(reviewRequest({ ...ok, target: 'branch:D:\\elsewhere' }), null);
+  assert.equal(reviewRequest({ ...ok, dir: '' }), null);
+  assert.equal(reviewRequest({ ...ok, dir: 'D:\\x" && rm -rf "y' }), null);
+  assert.deepEqual(reviewRequest(ok), { target: 'branch', dir, baseName: 'origin/main', headName: 'x rm', mergeBase: 'a'.repeat(40), head: '', fingerprint: 'abcdef0123456789', files: [{ rel: 'a.js', state: 'added', insertions: 3, deletions: 0 }] });
   assert.equal(reviewRequest({ ...ok, mergeBase: 'origin/main' }), null);
   assert.equal(reviewRequest({ ...ok, head: '--output=x' }), null);
   assert.equal(reviewRequest({ ...ok, files: [] }), null);
   assert.equal(reviewRequest({ ...ok, target: 'https://github.com/a/b/pull/3' }), null);
   assert.equal(reviewRequest({ ...ok, target: 'https://github.com/a/b/pull/3' }, u => u === 'https://github.com/a/b/pull/3').target, 'https://github.com/a/b/pull/3');
+});
+
+test('work folders: the file a tool writes, the list most recent first', async () => {
+  const { editedFile, withWorkDir, MAX_WORK_DIRS } = await import('../engine/work-dirs.mjs');
+  const abs = process.platform === 'win32' ? 'C:/repo/a.js' : '/repo/a.js';
+  assert.equal(editedFile('Edit', { file_path: abs }), abs);
+  assert.equal(editedFile('NotebookEdit', { notebook_path: abs }), abs);
+  assert.equal(editedFile('Read', { file_path: abs }), null);
+  assert.equal(editedFile('Write', { file_path: 'a.js' }), null);
+  assert.equal(editedFile('Bash', { command: 'x' }), null);
+  assert.deepEqual(withWorkDir(['D:/a', 'D:/b'], 'd:/B/'), ['d:/B/', 'D:/a']);
+  assert.deepEqual(withWorkDir(undefined, '/x'), ['/x']);
+  assert.equal(withWorkDir(Array.from({ length: 20 }, (_, i) => `/r/${i}`), '/new').length, MAX_WORK_DIRS);
 });

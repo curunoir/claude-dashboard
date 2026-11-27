@@ -4,6 +4,7 @@ import { BOARD_TOOL } from './mcp-tools.mjs';
 import { addCall } from './pricing.mjs';
 import { WORKFLOW_TOOL, workflowDir } from './workflows.mjs';
 import { mrUrlsIn } from '../public/core/mr-url.js';
+import { editedFile, rootOfFile } from '../engine/work-dirs.mjs';
 import { t, locale } from '../public/i18n/index.js';
 
 export const AGENT_TOOLS = new Set(['Agent', 'Task']); // the tool that launches a subagent (renamed Task → Agent depending on versions)
@@ -90,6 +91,13 @@ export function attachEvents(ctx) {
   let turnTools = 0, modelWindow = 0;
   const achievementCalls = new Map();
   const mrCalls = new Set(); // commands creating a merge request, whose result gives the URL (Review tab)
+  // Git folder of the last file written (by the session or a subagent): reported when it changes (Review tab)
+  let lastWorkDir = null;
+  const noteEdit = file => rootOfFile(file).then(root => {
+    if (!root || root === lastWorkDir || s.closed) return;
+    lastWorkDir = root;
+    updateBoard({ workDir: root });
+  });
 
   // Processing indicator (like "✻ Noodling… (3m 42s · ↓ 19.9k tokens)" in the console): start of the turn, tokens
   // generated, current phase. Broadcast separately (not in the feed), at most twice per second.
@@ -213,6 +221,8 @@ export function attachEvents(ctx) {
           if (b.name === 'Bash') { const a = bashActions(String(b.input?.command || '')); if (a.length) achievementCalls.set(b.id, a); }
         }
         if (b.type === 'tool_use' && (b.name === 'Bash' || b.name === 'PowerShell') && createsMr(b.input?.command)) mrCalls.add(b.id);
+        const written = b.type === 'tool_use' ? editedFile(b.name, b.input) : null;
+        if (written) noteEdit(written);
         if (b.type !== 'tool_use' || b.name === 'AskUserQuestion' || b.name === BOARD_TOOL) continue;
         if (AGENT_TOOLS.has(b.name)) ctx.launchAgent(b, parent);
         else {

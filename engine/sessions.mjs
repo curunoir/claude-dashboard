@@ -1,4 +1,5 @@
 // Driven sessions: creation, resume, end, callbacks given to driver.mjs, summary for the list, work in progress.
+import { workDirsOfFeed } from './work-dirs.mjs';
 import path from 'node:path';
 import { createSession, feedFromHistory } from '../driver.mjs';
 import { norm } from '../common.mjs';
@@ -116,10 +117,22 @@ export function newSession(cwd, text, mode = 'all', prePlan, model, parent) {
 }
 
 /** Restarts the query of a resumable session, with the feed rebuilt from its history (or the one given, reload). */
+/**
+ * A session from before `workDirs` (or resumed from the terminal): the folders it worked in are read once from its
+ * history. Not awaited: the panel gets them when git has answered.
+ */
+export function backfillWorkDirs(slug, feed) {
+  const data = sessions.get(slug)?.data;
+  if (!data || data.workDirs !== undefined) return;
+  data.workDirs = []; // read once, even when the history has no edit
+  workDirsOfFeed(feed).then(dirs => { if (dirs.length && sessions.has(slug)) for (const d of dirs.reverse()) updateBoard(slug, { workDir: d }); }, () => {});
+}
+
 export async function resume(slug, feed) {
   if (drivers.has(slug)) return drivers.get(slug);
   const { data } = sessions.get(slug);
   const initialFeed = feed || (data.sessionId ? await feedFromHistory(slug, data.sessionId, data.cwd) : []);
+  backfillWorkDirs(slug, initialFeed);
   if (drivers.has(slug)) return drivers.get(slug); // concurrent resume while reading the history
   const s = createSession({ slug, cwd: data.cwd, mode: data.mode || 'all', prePlan: data.prePlanMode || undefined, model: data.modelChoice || undefined, resume: data.sessionId, initialFeed, ...callbacks(slug) });
   drivers.set(slug, s);

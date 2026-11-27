@@ -7,6 +7,7 @@ import { detail, sideTab } from '../../core/state.js';
 import { $, esc, skeleton } from '../../core/dom.js';
 import { read, write } from '../../core/storage.js';
 import { mrLabel, cleanMrUrls } from '../../core/mr-url.js';
+import { pathKey } from '../../core/path-key.js';
 import { readingPath } from '../../core/review-guide.js';
 import { readTargets, readRange, requestGuide } from '../../services/review.js';
 import { GIT_STATES } from '../../services/git.js';
@@ -15,10 +16,13 @@ import { pathMenu } from '../path-menu.js';
 import { filesHtml } from '../git-files.js';
 import { t } from '../../i18n/index.js';
 
-/** Last reading for a session: `{ slug, target, targets, range }` (null before the first one). */
+/**
+ * Last reading for a session: `{ slug, target, targets, range }` (null before the first one). `targets`:
+ * `{ folders: [{ id, dir, branch, branchMr }], mrs, problems }` or `{ notGit }`.
+ */
 export const review = signal(null);
 
-const chosen = new Map();   // slug -> target displayed ('branch' or a merge request URL)
+const chosen = new Map();   // slug -> target displayed (a folder: 'branch' / 'branch:<dir>', or a merge request URL)
 const asking = new Map();   // slug -> { target, at }: guide asked, not received yet
 const unfolded = new Map(); // `slug|target|step` -> true / false: a step opened or folded by hand
 let reading = null, lastRead = { key: '', at: 0 }, lastJson = '';
@@ -26,7 +30,31 @@ let reading = null, lastRead = { key: '', at: 0 }, lastJson = '';
 /** Merge requests known for the displayed session (count of the tab), 0 before the first reading. */
 export function reviewCount(d) {
   const r = review();
-  return r?.slug === d.slug && r.targets && !r.targets.notGit ? (r.targets.branchMr ? 1 : 0) + r.targets.mrs.length : 0;
+  return r?.slug === d.slug && r.targets && !r.targets.notGit ? r.targets.folders.filter(f => f.branchMr).length + r.targets.mrs.length : 0;
+}
+
+/**
+ * The git folders to review for a session: those it edited files in (`workDirs`, most recent first: a session started
+ * in a repo often works in a worktree it created), otherwise its own folder. Each one is a target: `branch` for the
+ * folder of the session, `branch:<dir>` for another one.
+ */
+function workFolders(d) {
+  const dirs = Array.isArray(d.workDirs) && d.workDirs.length ? d.workDirs : [d.cwd];
+  return dirs.map(dir => ({ dir, id: pathKey(dir) === pathKey(d.cwd) ? 'branch' : `branch:${dir}` }));
+}
+
+/** Reads the merge requests of each folder (the declared ones with the first); folders git cannot read are left out. */
+async function readAllTargets(d, mrs) {
+  const folders = workFolders(d);
+  const answers = await Promise.all(folders.map((f, k) => readTargets(f.dir, k ? [] : mrs).catch(e => ({ notGit: true, error: e.message }))));
+  const ok = folders.map((f, k) => ({ ...f, ...answers[k] })).filter(f => !f.notGit);
+  if (!ok.length) return { notGit: true, error: answers[0]?.error };
+  const own = new Set(ok.map(f => f.branchMr?.url).filter(Boolean));
+  return {
+    folders: ok.map(({ id, dir, branch, branchMr }) => ({ id, dir, branch, branchMr })),
+    mrs: (ok[0].mrs || []).filter(m => !own.has(m.url)),
+    problems: ok.flatMap(f => f.problems || []).filter((p, k, all) => all.findIndex(x => x.tool === p.tool) === k),
+  };
 }
 
 /**
@@ -34,17 +62,22 @@ export function reviewCount(d) {
  * for the same session and target unless `force`); the tab repaints only when the answer changed.
  */
 export function refreshReview(d, force = false) {
-  const mrs = cleanMrUrls(d.mrs), target = chosen.get(d.slug) || 'branch';
-  const key = `${d.slug}|${target}|${mrs.join(' ')}`;
+  const mrs = cleanMrUrls(d.mrs), folders = workFolders(d);
+  // The target displayed: the one chosen if it still exists, otherwise the folder worked in last
+  const wanted = chosen.get(d.slug);
+  const target = wanted && (folders.some(f => f.id === wanted) || mrs.includes(wanted)) ? wanted : folders[0].id;
+  const key = `${d.slug}|${target}|${mrs.join(' ')}|${folders.map(f => f.dir).join('|')}`;
   // Another target was just chosen while a reading runs: read again right after it
   if (reading && force) return reading.then(() => refreshReview(d, true));
   if (reading || (!force && key === lastRead.key && Date.now() - lastRead.at < 8000)) return reading;
   lastRead = { key, at: Date.now() };
+  const folder = folders.find(f => f.id === target);
   reading = Promise.all([
-    readTargets(d.cwd, mrs).catch(e => ({ notGit: true, error: e.message })),
-    readRange(d.cwd, target).catch(e => ({ error: e.message })),
+    readAllTargets(d, mrs),
+    // A folder is compared with its base; a merge request is read from the first folder (its repository)
+    (folder ? readRange(folder.dir, 'branch') : readRange(folders[0].dir, target)).catch(e => ({ error: e.message })),
   ]).then(([targets, range]) => {
-    if ((chosen.get(d.slug) || 'branch') !== target) return; // answer for a target left in the meantime
+    if (chosen.get(d.slug) !== wanted) return; // answer for a target left in the meantime
     const next = { slug: d.slug, target, targets, range }, json = JSON.stringify(next);
     if (json !== lastJson) { lastJson = json; review.set(next); }
   }).finally(() => { reading = null; });
@@ -79,27 +112,37 @@ function problemsHtml(targets) {
 }
 
 /** The targets, when there are several: the branch (with its merge request) then the other merge requests. */
+const folderName = dir => String(dir).replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+
+/** The targets, when there are several: the folders the session worked in (with their merge request) then the other merge requests. */
 function targetsHtml(targets, target) {
-  if (!targets.mrs.length) return '';
+  if (targets.folders.length + targets.mrs.length < 2) return '';
   const item = (id, label, title, pills) => `<button class="rv-target ${id === target ? 'on' : ''}" data-review-target="${esc(id)}">
-    <span class="rv-num">${esc(label)}</span><span class="rv-ttl">${esc(title)}</span>${pills}</button>`;
-  const b = targets.branchMr;
+    <span class="rv-num">${esc(label)}</span><span class="rv-ttl">${title}</span>${pills}</button>`;
+  const several = targets.folders.length > 1;
   return `<div class="rv-targets">
-    ${item('branch', b ? mrLabel(b) : '⎇', b ? b.title : targets.branch || t('side.review.detachedTitle'), b ? statePills(b) : pill('draft', t('side.review.noMr')))}
-    ${targets.mrs.map(m => item(m.url, mrLabel(m), m.title || m.url, statePills(m) + (m.branch === targets.branch ? '' : pill('ref', t('side.review.cited'))))).join('')}
+    ${targets.folders.map(f => {
+      const b = f.branchMr;
+      return item(f.id, b ? mrLabel(b) : '⎇', esc(b ? b.title : f.branch || t('side.review.detachedTitle')) + (several ? ` <span class="m">📁 ${esc(folderName(f.dir))}</span>` : ''),
+        b ? statePills(b) : pill('draft', t('side.review.noMr')));
+    }).join('')}
+    ${targets.mrs.map(m => item(m.url, mrLabel(m), esc(m.title || m.url), statePills(m) + pill('ref', t('side.review.cited')))).join('')}
   </div>`;
 }
 
-function headHtml(targets, target, range) {
-  const mr = target === 'branch' ? targets.branchMr : targets.mrs.find(m => m.url === target);
-  const title = mr ? `${mrLabel(mr)} ${mr.title || ''}` : targets.branch ? t('side.review.branchTitle', { branch: targets.branch }) : t('side.review.detachedTitle');
+function headHtml(d, targets, target, range) {
+  const folder = targets.folders.find(f => f.id === target);
+  const mr = folder ? folder.branchMr : targets.mrs.find(m => m.url === target);
+  const title = mr ? `${mrLabel(mr)} ${mr.title || ''}` : folder?.branch ? t('side.review.branchTitle', { branch: folder.branch }) : t('side.review.detachedTitle');
+  // Said when it is not the folder of the session: a worktree it created, another repository it edited
+  const where = folder && folder.id !== 'branch' ? `<span title="${esc(folder.dir)}">📁 ${esc(folderName(folder.dir))}</span>` : '';
   const files = range?.files || [];
   const plus = files.reduce((n, f) => n + (f.insertions || 0), 0), minus = files.reduce((n, f) => n + (f.deletions || 0), 0);
   const refs = range?.baseName ? `<span><code>${esc(range.headName || 'HEAD')}</code> ${mr ? '→' : t('side.review.comparedWith')} <code>${esc(range.baseName)}</code></span>` : '';
   const counts = range?.files ? `<span>${t('side.review.commits', { n: range.commits })} · ${t('side.review.files', { n: files.length })}
     ${plus ? `<span class="plus">+${plus}</span>` : ''} ${minus ? `<span class="minus">−${minus}</span>` : ''}</span>` : '';
   return `<div class="rv-head"><h2>${esc(title)}</h2>
-    <div class="rv-meta">${mr ? statePills(mr) : pill('draft', t('side.review.noMr'))}${refs}${counts}
+    <div class="rv-meta">${mr ? statePills(mr) : pill('draft', t('side.review.noMr'))}${where}${refs}${counts}
       ${mr ? `<a href="${esc(mr.url)}" target="_blank" rel="noopener">${t(`side.review.openOn.${mr.forge}`)}</a>` : ''}</div></div>`;
 }
 
@@ -156,7 +199,7 @@ function bodyHtml(d, target, range, guide, path) {
   if (range.noBase) return `<p class="m">${t('side.review.noBase')}</p>`;
   if (range.error || !range.files) return `<p class="m">${t('side.review.unreadable', { message: esc(range.error || '?') })}</p>`;
   if (!range.files.length) return `<p class="m">${t('side.review.nothing', { base: esc(range.baseName) })}</p>`;
-  const uncommitted = target === 'branch' ? ` <span class="m">· ${t('side.review.uncommitted')}</span>` : '';
+  const uncommitted = range.head ? '' : ` <span class="m">· ${t('side.review.uncommitted')}</span>`;
   // With a guide, every file is in the reading path or under "Outside the path": the flat list would repeat them
   return guideHtml(d, target, range, guide, path) + (guide ? '' : `<div class="rv-section">${t('side.review.allFiles', { n: range.files.length })}${uncommitted}</div>
     ${filesHtml(range.files, 'data-review-file')}`);
@@ -175,7 +218,7 @@ export function renderReview(d, bar) {
   const path = guide ? readingPath(files, guide) : null;
   el.innerHTML = `${bar}<div id="review">${!targets ? skeleton('lines', 6)
     : targets.notGit ? `<p class="m">${t('side.review.notGit')}</p>`
-    : problemsHtml(targets) + targetsHtml(targets, r.target) + headHtml(targets, r.target, range) + bodyHtml(d, r.target, range, guide, path)}</div>`;
+    : problemsHtml(targets) + targetsHtml(targets, r.target) + headHtml(d, targets, r.target, range) + bodyHtml(d, r.target, range, guide, path)}</div>`;
   el.scrollTop = scroll;
   const repaint = () => review.set({ ...review() });
   el.querySelectorAll('[data-review-target]').forEach(b => b.addEventListener('click', () => {
@@ -216,7 +259,7 @@ export function renderReview(d, bar) {
     repaint();
     try {
       await requestGuide(d.slug, {
-        target: r.target, baseName: range.baseName, headName: range.headName, mergeBase: range.mergeBase, head: range.head, fingerprint: range.fingerprint,
+        target: r.target, dir: (targets.folders.find(f => f.id === r.target) || targets.folders[0]).dir, baseName: range.baseName, headName: range.headName, mergeBase: range.mergeBase, head: range.head, fingerprint: range.fingerprint,
         files: files.map(f => ({ rel: f.rel, state: f.state, insertions: f.insertions, deletions: f.deletions })),
       });
     } catch (e) { asking.delete(d.slug); repaint(); alert(t('side.review.guide.askFailed', { message: e.message })); }

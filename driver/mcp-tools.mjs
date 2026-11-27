@@ -149,7 +149,7 @@ export function attachMcpTools(ctx) {
       + 'developer understand and judge what the session produced before the usual code review. Call it when the '
       + 'dashboard asks for it; the request gives the target, the diff and the rules.',
       {
-        target: z.string().describe('"branch", or the URL of the merge request, as given in the request'),
+        target: z.string().describe('The target exactly as given in the request ("branch", "branch:<folder>" or the URL of the merge request)'),
         guide: z.object({
           summary: z.string().describe('One or two sentences: what this diff does'),
           scope: z.object({
@@ -173,8 +173,9 @@ export function attachMcpTools(ctx) {
         }),
       },
       async ({ target, guide: input }) => {
-        const id = target === 'branch' ? 'branch' : parseMrUrl(target)?.url;
-        if (!id) return { content: [{ type: 'text', text: 'Guide rejected: target must be "branch" or a merge request URL' }], isError: true };
+        // Another work folder (`branch:<folder>`) is only accepted as the target of the pending request
+        const id = target === 'branch' || (target.startsWith('branch:') && s.reviewRequest?.target === target) ? target : parseMrUrl(target)?.url;
+        if (!id) return { content: [{ type: 'text', text: 'Guide rejected: target must be the one given in the request' }], isError: true };
         const { guide, error } = cleanGuide(input);
         if (error) return { content: [{ type: 'text', text: `Guide rejected: ${error}` }], isError: true };
         // The fingerprint of the diff the developer was looking at when asking: the page marks the guide outdated once the diff differs
@@ -193,12 +194,14 @@ export function attachMcpTools(ctx) {
     if (s.closed) return false;
     s.reviewRequest = { target: r.target, fingerprint: r.fingerprint };
     pushEvent({ id: newId(), t: 'auto', text: t('driver.feed.reviewGuideAsked') });
-    const what = r.target === 'branch' ? `the branch ${r.headName || 'of this session'}` : `the merge request ${r.target}`;
-    const diff = r.head ? `git diff ${r.mergeBase} ${r.head}` : `git diff ${r.mergeBase} (working tree, uncommitted changes included, plus the untracked files listed below)`;
+    const what = parseMrUrl(r.target) ? `the merge request ${r.target}` : `the branch ${r.headName || 'of this session'}`;
+    const git = `git -C "${r.dir.replace(/\\/g, '/')}"`; // forward slashes: read the same by Git Bash and PowerShell
+    const diff = r.head ? `${git} diff ${r.mergeBase} ${r.head}` : `${git} diff ${r.mergeBase} (working tree, uncommitted changes included, plus the untracked files listed below)`;
     ctx.dispatch([
       `[Dashboard] The developer asks for the reading guide of ${what} (Review tab of the dashboard). They drive this `
         + 'session and want to understand and judge what it produced (quality, scope, relevance) before the usual code review.',
       '',
+      `Folder of the work: ${r.dir} (it may not be your current folder: the paths below are relative to it).`,
       `Diff to describe: ${r.baseName} → ${r.headName || 'HEAD'}. Read it with: ${diff}`,
       `Files of the diff (${r.files.length}):`,
       ...r.files.map(f => `- ${f.state} ${f.rel} +${f.insertions} -${f.deletions}`),
